@@ -1,0 +1,62 @@
+# Flutter
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+.packages
+.flutter/
+flutter_export_environment.sh
+
+# Build
+/build/
+/.dart_tool/
+/android/app/build/
+/ios/build/
+
+# Android
+/android/app/debug/
+/android/app/profile/
+/android/app/release/
+/android/app/src/main/java/io/flutter/plugins/
+/android/app/src/main/kotlin/io/flutter/plugins/
+/android/app/.gradle/
+/android/gradle/
+/android/.gradle/
+
+# iOS
+/ios/Flutter/App.framework/
+/ios/Flutter/Flutter.podspec
+/ios/Flutter/Flutter.xcframework/
+/ios/Flutter/Generated.xcconfig
+/ios/ServiceDefinitions.json
+/ios/Runner/GeneratedPluginRegistrant.*
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env*.local
+
+# Logs
+*.log
+
+# Misc
+*.class
+*.lock
+
+# Sensitive files (add these)
+android/app/google-services.json
+android/app/google-services.json
+android/app/src/debug/google-services.json
+android/app/src/release/google-services.json
