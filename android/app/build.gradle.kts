@@ -36,16 +36,17 @@ android {
         jvmTarget = "11"
     }
 
-    // PERMANENT MULTI-COMPUTER DEBUG CONFIG (works everywhere, forever)
+    // FINAL MULTI-COMPUTER SOLUTION (works forever on every PC)
     signingConfigs {
-        create("debug") {
-            storeFile = file("debug.keystore")                  // relative path → works on any drive
+        // We name it "customDebug" to avoid conflict with Flutter's built-in debug config
+        create("customDebug") {
+            storeFile = file("debug.keystore")        // relative path → works everywhere
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
 
-        // Your existing release config (unchanged, still uses key.properties)
+        // Your original release config (unchanged – still uses key.properties)
         create("release") {
             keyAlias = keystoreProperties["keyAlias"] as String?
             keyPassword = keystoreProperties["keyPassword"] as String?
@@ -56,7 +57,7 @@ android {
 
     buildTypes {
         getByName("debug") {
-            signingConfig = signingConfigs.getByName("debug")   // ← uses the bulletproof debug config
+            signingConfig = signingConfigs.getByName("customDebug")  // ← use our perfect debug config
         }
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
