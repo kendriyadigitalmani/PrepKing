@@ -9,56 +9,81 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
-  # State Management
   flutter_riverpod: ^2.5.1
-
-  # Navigation
   go_router: ^14.2.0
-
-  # Networking
-  dio: ^5.7.0
+  dio: ^5.5.7
   retrofit: ^4.2.0
-
-  # JSON Serialization
   json_annotation: ^4.9.0
-
-  # UI & Animations
+  json_serializable: ^6.8.0
   lottie: ^3.1.2
   animate_do: ^3.3.4
   google_fonts: ^6.2.1
   flutter_svg: ^2.0.10+1
   cached_network_image: ^3.3.1
   shimmer: ^3.0.0
-
-  # Local Storage
+  confetti: ^0.8.0
+  share_plus: ^10.0.0
+  screenshot: ^3.0.0
+  path_provider: ^2.1.4
   shared_preferences: ^2.3.2
-
-  # Firebase & Google Sign-In
   firebase_core: ^3.4.0
   firebase_auth: ^5.3.0
   google_sign_in: ^6.2.1
-
-  # Utilities
   intl: ^0.19.0
   uuid: ^4.5.0
-
-  # Icons (replacing cupertino_icons for broader use)
+  vibration: ^3.1.4
   cupertino_icons: ^1.0.8
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
-
-  # Code Generation
   build_runner: ^2.4.12
   retrofit_generator: ^8.1.2
-  json_serializable: ^6.8.0
+  freezed: ^2.5.2
+  flutter_native_splash: ^2.4.1
+  flutter_launcher_icons: ^0.14.1
 
 flutter:
   uses-material-design: true
-
   assets:
     - assets/images/
     - assets/lottie/
+    - assets/lottie/trophy.json
+    - assets/lottie/sad.json
+
+# —————————————————————————————
+# NATIVE SPLASH SCREEN CONFIGURATION (OPTIMIZED)
+# —————————————————————————————
+flutter_native_splash:
+  # Basic configuration
+  color: "#6C5CE7"
+  image: assets/images/logo.png
+
+  # Platform support
+  android: true
+  ios: true
+
+  # Android 12+ specific
+  android_12:
+    image: assets/images/logo.png
+    color: "#6C5CE7"
+
+  # CRITICAL: Make splash stay longer
+  fill: true
+  fullscreen: true
+
+  # Add delay to keep splash visible
+  #android_enable_immersive_immersive_sticky: true
+  #android_disable_fullscreen: false
+
+# —————————————————————————————
+# APP ICONS CONFIGURATION
+# —————————————————————————————
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/logo.png"
+  adaptive_icon_background: "#6C5CE7"
+  adaptive_icon_foreground: "assets/images/logo.png"
+  android_generate_legacy_files: true
