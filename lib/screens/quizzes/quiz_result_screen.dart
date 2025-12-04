@@ -11,10 +11,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:screenshot/screenshot.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:developer' as developer;
-import '../../core/services/api_service.dart';
 
 class QuizResultScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> result;
+
   const QuizResultScreen({super.key, required this.result});
 
   @override
@@ -25,118 +25,66 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen> {
   late final ConfettiController _confettiController;
   final ScreenshotController _screenshotController = ScreenshotController();
 
-  bool _isLoading = false;
-  List<Map<String, dynamic>> _reviewData = [];
-  Map<String, dynamic>? _resultData;
-
   double _score = 0.0;
   double _fullMarks = 50.0;
   double _percentage = 0.0;
+  String _quizTitle = "Quiz";
+  int _attemptId = 0; // This is the key now
 
   @override
   void initState() {
     super.initState();
     _confettiController = ConfettiController(duration: const Duration(seconds: 5));
-    developer.log('QuizResultScreen → Raw result: ${jsonEncode(widget.result)}');
-    _processResultData();
+    _extractResultData();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(milliseconds: 800), () {
-        if (!mounted) return;
-        if (_percentage >= 60) {
+        if (mounted && _percentage >= 60) {
           _confettiController.play();
         }
       });
     });
   }
 
-  double _getScore() {
-    return double.tryParse(
-      widget.result['score']?.toString() ??
-          widget.result['data']?['score']?.toString() ??
-          _resultData?['score']?.toString() ??
-          '0',
-    ) ??
-        0.0;
-  }
-
-  double _getFullMarks() {
-    return double.tryParse(
-      widget.result['full_marks']?.toString() ??
-          widget.result['data']?['full_marks']?.toString() ??
-          _resultData?['full_marks']?.toString() ??
-          '50',
-    ) ??
-        50.0;
-  }
-
-  double _calculatePercentage() {
-    final score = _getScore();
-    final full = _getFullMarks();
-    return full > 0 ? (score / full) * 100 : 0.0;
-  }
-
-  void _processResultData() {
+  void _extractResultData() {
     try {
-      if (widget.result['success'] == true && widget.result['id'] != null) {
-        final resultId = widget.result['id'].toString();
-        developer.log('Fresh result → loading detailed data for ID: $resultId');
-        _loadDetailedResult(resultId);
-        return;
-      }
-
       final data = widget.result['data'] ?? widget.result;
-      _resultData = Map<String, dynamic>.from(data);
-      _updateFromResultData();
+
+      // Safely extract attemptId from multiple possible keys
+      final String? idStr = data['id']?.toString() ??
+          data['attempt_id']?.toString() ??
+          data['attemptId']?.toString();
+
+      _attemptId = int.tryParse(idStr ?? '') ?? 0;
+
+      _quizTitle = data['quiz_title']?.toString() ??
+          data['title']?.toString() ??
+          "Quiz Result";
+
+      // Score extraction
+      final String? scoreStr = data['obtained_marks']?.toString() ??
+          data['score']?.toString() ??
+          data['result_score']?.toString();
+
+      final String? totalStr = data['total_marks']?.toString() ??
+          data['full_marks']?.toString() ??
+          '50';
+
+      _score = double.tryParse(scoreStr ?? '0') ?? 0.0;
+      _fullMarks = double.tryParse(totalStr ?? '50') ?? 50.0;
+      _percentage = _fullMarks > 0 ? (_score / _fullMarks) * 100 : 0.0;
+
+      developer.log('QuizResult → attemptId: $_attemptId | Score: $_score/$_fullMarks (${_percentage.toStringAsFixed(1)}%)');
+
+      setState(() {});
     } catch (e, s) {
-      developer.log('Error processing result data', error: e, stackTrace: s);
-    }
-  }
-
-  void _updateFromResultData() {
-    if (_resultData == null) return;
-
-    setState(() {
-      _score = double.tryParse(_resultData!['score'].toString()) ?? 0.0;
-      _fullMarks = double.tryParse(_resultData!['full_marks'].toString()) ?? 50.0;
-      _percentage = _calculatePercentage();
-
-      final questionsData = _resultData!['questions_data'];
-      if (questionsData is List && questionsData.isNotEmpty) {
-        _reviewData = questionsData.cast<Map<String, dynamic>>().toList();
-      } else if (questionsData is String) {
-        try {
-          final decoded = jsonDecode(questionsData) as List;
-          _reviewData = decoded.cast<Map<String, dynamic>>();
-        } catch (_) {
-          _reviewData = [];
-        }
-      } else {
-        _reviewData = [];
-      }
-    });
-  }
-
-  Future<void> _loadDetailedResult(String resultId) async {
-    if (_isLoading) return;
-    setState(() => _isLoading = true);
-
-    try {
-      final api = ref.read(apiServiceProvider);
-      final response = await api.get('/result/$resultId');
-      if (response['success'] == true && response['data'] != null) {
-        _resultData = Map<String, dynamic>.from(response['data']);
-        _updateFromResultData();
-      }
-    } catch (e, s) {
-      developer.log('Failed to load detailed result', error: e, stackTrace: s);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not load detailed results')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      developer.log('Error extracting result data', error: e, stackTrace: s);
+      // Fallback values
+      _attemptId = 0;
+      _score = 0.0;
+      _fullMarks = 50.0;
+      _percentage = 0.0;
+      setState(() {});
     }
   }
 
@@ -151,14 +99,36 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen> {
 
       await Share.shareXFiles(
         [XFile(path)],
-        text: "I scored ${_score.toInt()}/${_fullMarks.toInt()} (${_percentage.toStringAsFixed(1)}%) in PrepKing Quiz! Can you beat me?",
+        text: "I scored ${_score.toInt()}/${_fullMarks.toInt()} (${_percentage.toString}%) in \"$_quizTitle\" on PrepKing! Can you beat me?",
         subject: "My Quiz Result - PrepKing",
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Share failed: $e")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Share failed: $e")),
+        );
+      }
     }
+  }
+
+  String get _percentageString => _percentage.toStringAsFixed(1);
+
+  void _navigateToReview() {
+    if (_attemptId <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Review not available for this attempt")),
+      );
+      return;
+    }
+
+    // NEW: Only pass attemptId — QuizReviewScreen fetches everything itself
+    context.push(
+      '/quiz-review',
+      extra: {
+        'attemptId': _attemptId,
+        'testName': _quizTitle,
+      },
+    );
   }
 
   @override
@@ -170,14 +140,14 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen> {
   @override
   Widget build(BuildContext context) {
     final passed = _percentage >= 60;
-    final totalQuestions = _reviewData.isNotEmpty ? _reviewData.length : 5;
+    final totalQuestions = (widget.result['data']?['total_questions'] ?? 5).toString();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: Column(
           children: [
-            // ONLY THIS PART IS CAPTURED IN SHARE
+            // SHAREABLE CONTENT
             Expanded(
               child: Screenshot(
                 controller: _screenshotController,
@@ -280,7 +250,7 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen> {
                                           color: passed ? Colors.green.shade600 : Colors.orange.shade600,
                                           borderRadius: BorderRadius.circular(30),
                                         ),
-                                        child: Text("${_percentage.toStringAsFixed(1)}%",
+                                        child: Text("${_percentageString}%",
                                             style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
                                       ),
                                     ],
@@ -307,8 +277,8 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen> {
                                             child: Column(
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                Text("Instant Quiz Challenge", style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)),
-                                                Text("$totalQuestions Questions • 2.5 minutes", style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600])),
+                                                Text(_quizTitle, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)),
+                                                Text("$totalQuestions Questions • Instant Quiz", style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600])),
                                               ],
                                             ),
                                           ),
@@ -319,7 +289,7 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen> {
                                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                                         children: [
                                           _buildStatCard(Icons.timer_outlined, "Time", "2m 30s"),
-                                          _buildStatCard(Icons.trending_up, "Accuracy", "${_percentage.toStringAsFixed(0)}%"),
+                                          _buildStatCard(Icons.trending_up, "Accuracy", "${_percentageString}%"),
                                           _buildStatCard(Icons.star_border, "Points", _score.toStringAsFixed(0)),
                                         ],
                                       ),
@@ -338,7 +308,7 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen> {
               ),
             ),
 
-            // BUTTONS BELOW — NOT INCLUDED IN SHARE
+            // BUTTONS (Not in screenshot)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
               child: Column(
@@ -360,34 +330,23 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // REVIEW BUTTON — ALWAYS VISIBLE IF DATA EXISTS
-                  if (_isLoading)
-                    _buildLoadingCard()
-                  else if (_reviewData.isNotEmpty)
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          context.push('/quiz-review', extra: {
-                            'reviewData': _reviewData,
-                            'score': _score,
-                            'fullMarks': _fullMarks,
-                            'percentage': _percentage,
-                          });
-                        },
-                        icon: const Icon(Icons.remove_red_eye_outlined, color: Colors.white),
-                        label: Text("Review Answers (${_reviewData.length})",
-                            style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF6C5CE7),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                        ),
+                  // REVIEW BUTTON — Now super fast & reliable
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton.icon(
+                      onPressed: _attemptId > 0 ? _navigateToReview : null,
+                      icon: const Icon(Icons.remove_red_eye_outlined, color: Colors.white),
+                      label: Text(
+                        _attemptId > 0 ? "Review Answers" : "Review Not Available",
+                        style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white),
                       ),
-                    )
-                  else
-                    _buildReviewComingSoonCard(),
-
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _attemptId > 0 ? const Color(0xFF6C5CE7) : Colors.grey,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 20),
 
                   // Back to Quizzes
@@ -410,42 +369,6 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildLoadingCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.blue.shade200)),
-      child: const Row(
-        children: [
-          SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3)),
-          SizedBox(width: 16),
-          Expanded(child: Text("Loading your detailed results...", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600))),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReviewComingSoonCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.amber.shade300)),
-      child: Row(
-        children: [
-          Icon(Icons.lightbulb_outline, color: Colors.amber.shade700),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text("Review Coming Soon", style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.amber.shade800)),
-                Text("Detailed analysis will appear here", style: GoogleFonts.poppins(fontSize: 14, color: Colors.amber.shade700)),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
