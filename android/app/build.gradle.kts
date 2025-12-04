@@ -36,16 +36,28 @@ android {
         jvmTarget = "11"
     }
 
+    // PERMANENT MULTI-COMPUTER DEBUG CONFIG (works everywhere, forever)
     signingConfigs {
+        create("debug") {
+            storeFile = file("debug.keystore")                  // relative path → works on any drive
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+
+        // Your existing release config (unchanged, still uses key.properties)
         create("release") {
             keyAlias = keystoreProperties["keyAlias"] as String?
             keyPassword = keystoreProperties["keyPassword"] as String?
-            storeFile = file(keystoreProperties["storeFile"] as String?)
+            storeFile = keystoreProperties["storeFile"]?.let { file(it) }
             storePassword = keystoreProperties["storePassword"] as String?
         }
     }
 
     buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("debug")   // ← uses the bulletproof debug config
+        }
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
