@@ -14,7 +14,6 @@ import 'dart:developer' as developer;
 
 class QuizResultScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> result;
-
   const QuizResultScreen({super.key, required this.result});
 
   @override
@@ -29,7 +28,7 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen> {
   double _fullMarks = 50.0;
   double _percentage = 0.0;
   String _quizTitle = "Quiz";
-  int _attemptId = 0; // This is the key now
+  int _attemptId = 0;
 
   @override
   void initState() {
@@ -50,22 +49,18 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen> {
     try {
       final data = widget.result['data'] ?? widget.result;
 
-      // Safely extract attemptId from multiple possible keys
       final String? idStr = data['id']?.toString() ??
           data['attempt_id']?.toString() ??
           data['attemptId']?.toString();
-
       _attemptId = int.tryParse(idStr ?? '') ?? 0;
 
       _quizTitle = data['quiz_title']?.toString() ??
           data['title']?.toString() ??
           "Quiz Result";
 
-      // Score extraction
       final String? scoreStr = data['obtained_marks']?.toString() ??
           data['score']?.toString() ??
           data['result_score']?.toString();
-
       final String? totalStr = data['total_marks']?.toString() ??
           data['full_marks']?.toString() ??
           '50';
@@ -74,32 +69,50 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen> {
       _fullMarks = double.tryParse(totalStr ?? '50') ?? 50.0;
       _percentage = _fullMarks > 0 ? (_score / _fullMarks) * 100 : 0.0;
 
-      developer.log('QuizResult → attemptId: $_attemptId | Score: $_score/$_fullMarks (${_percentage.toStringAsFixed(1)}%)');
-
+      developer.log(
+          'QuizResult → attemptId: $_attemptId | Score: $_score/$_fullMarks (${_percentage.toStringAsFixed(1)}%)');
       setState(() {});
     } catch (e, s) {
       developer.log('Error extracting result data', error: e, stackTrace: s);
-      // Fallback values
-      _attemptId = 0;
-      _score = 0.0;
-      _fullMarks = 50.0;
-      _percentage = 0.0;
       setState(() {});
     }
   }
 
   Future<void> _shareScreenshot() async {
-    try {
-      final imageBytes = await _screenshotController.capture();
-      if (imageBytes == null) return;
+    // Critical: Delay to ensure full layout + confetti render
+    await Future.delayed(const Duration(milliseconds: 800));
 
+    try {
+      final imageBytes = await _screenshotController.capture(
+        delay: const Duration(milliseconds: 400),
+        pixelRatio: MediaQuery.of(context).devicePixelRatio * 1.5, // High quality
+      );
+
+      if (imageBytes == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Failed to capture screenshot")),
+        );
+        return;
+      }
+
+      final quizData = widget.result['data'] ?? widget.result;
+      final String slugOrId = () {
+        final slug = quizData['slug']?.toString().trim();
+        if (slug != null && slug.isNotEmpty) return slug;
+        final quizId = quizData['quiz_id'] ?? quizData['id'];
+        return quizId?.toString() ?? 'unknown';
+      }();
+
+      final String shareUrl = "https://prepking.online/q/$slugOrId";
       final directory = await getTemporaryDirectory();
-      final path = '${directory.path}/quiz_result_${DateTime.now().millisecondsSinceEpoch}.png';
+      final path =
+          '${directory.path}/quiz_result_${DateTime.now().millisecondsSinceEpoch}.png';
       final file = File(path)..writeAsBytesSync(imageBytes);
 
       await Share.shareXFiles(
         [XFile(path)],
-        text: "I scored ${_score.toInt()}/${_fullMarks.toInt()} (${_percentage.toString}%) in \"$_quizTitle\" on PrepKing! Can you beat me?",
+        text:
+        "I scored ${_score.toInt()}/${_fullMarks.toInt()} (${_percentageString}%) in \"$_quizTitle\" on PrepKing!\n\nCan you beat my score?\n\n$shareUrl",
         subject: "My Quiz Result - PrepKing",
       );
     } catch (e) {
@@ -120,8 +133,6 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen> {
       );
       return;
     }
-
-    // NEW: Only pass attemptId — QuizReviewScreen fetches everything itself
     context.push(
       '/quiz-review',
       extra: {
@@ -140,234 +151,329 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen> {
   @override
   Widget build(BuildContext context) {
     final passed = _percentage >= 60;
-    final totalQuestions = (widget.result['data']?['total_questions'] ?? 5).toString();
+    final totalQuestions =
+    (widget.result['data']?['total_questions'] ?? 5).toString();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
-        child: Column(
-          children: [
-            // SHAREABLE CONTENT
-            Expanded(
-              child: Screenshot(
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ==================== FULL SCORECARD (CAPTURED AREA) ====================
+              Screenshot(
                 controller: _screenshotController,
                 child: Container(
                   color: const Color(0xFFF8FAFC),
-                  child: CustomScrollView(
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: Container(
-                          height: MediaQuery.of(context).size.height * 0.4,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                const Color(0xFF6C5CE7).withOpacity(0.1),
-                                Colors.white,
-                              ],
-                            ),
-                          ),
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              ConfettiWidget(
-                                confettiController: _confettiController,
-                                blastDirectionality: BlastDirectionality.explosive,
-                                emissionFrequency: 0.05,
-                                numberOfParticles: 100,
-                                gravity: 0.25,
-                                shouldLoop: false,
-                                colors: const [
-                                  Colors.red, Colors.blue, Colors.green,
-                                  Colors.yellow, Colors.purple, Colors.orange,
-                                  Colors.pink, Colors.cyan, Colors.amber,
+                  child: Stack(
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Header: Lottie + Message
+                          Container(
+                            padding: const EdgeInsets.fromLTRB(20, 40, 20, 30),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  const Color(0xFF6C5CE7).withOpacity(0.15),
+                                  Colors.white.withOpacity(0.9),
+                                  Colors.white,
                                 ],
                               ),
-                              Lottie.asset(
-                                passed ? 'assets/lottie/trophy.json' : 'assets/lottie/sad.json',
-                                width: 220,
-                                height: 220,
-                                fit: BoxFit.contain,
-                                repeat: true,
-                                errorBuilder: (_, __, ___) => Icon(
-                                  passed ? Icons.celebration : Icons.sentiment_dissatisfied,
-                                  size: 140,
-                                  color: passed ? Colors.amber.shade700 : Colors.orange.shade700,
+                            ),
+                            child: Column(
+                              children: [
+                                Lottie.asset(
+                                  passed
+                                      ? 'assets/lottie/trophy.json'
+                                      : 'assets/lottie/sad.json',
+                                  width: 260,
+                                  height: 260,
+                                  fit: BoxFit.contain,
+                                  repeat: true,
+                                  errorBuilder: (_, __, ___) => Icon(
+                                    passed ? Icons.celebration : Icons.sentiment_dissatisfied,
+                                    size: 160,
+                                    color: passed ? Colors.amber.shade700 : Colors.orange.shade700,
+                                  ),
                                 ),
-                              ),
-                              Positioned(
-                                bottom: 30,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                                const SizedBox(height: 20),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 36, vertical: 18),
                                   decoration: BoxDecoration(
-                                    color: passed ? Colors.green.shade600 : Colors.orange.shade600,
-                                    borderRadius: BorderRadius.circular(30),
+                                    color:
+                                    passed ? Colors.green.shade600 : Colors.orange.shade600,
+                                    borderRadius: BorderRadius.circular(32),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: (passed ? Colors.green : Colors.orange)
+                                            .withOpacity(0.5),
+                                        blurRadius: 16,
+                                        offset: const Offset(0, 8),
+                                      ),
+                                    ],
                                   ),
                                   child: Text(
-                                    passed ? "Congratulations!" : "Better Luck Next Time!",
+                                    passed
+                                        ? "Congratulations! You Passed!"
+                                        : "Better Luck Next Time!",
                                     style: GoogleFonts.poppins(
-                                      fontSize: 24,
+                                      fontSize: 26,
                                       fontWeight: FontWeight.bold,
                                       color: Colors.white,
                                     ),
+                                    textAlign: TextAlign.center,
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      ),
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.all(20.0),
-                          child: Column(
-                            children: [
-                              Card(
-                                elevation: 12,
-                                shadowColor: const Color(0xFF6C5CE7).withOpacity(0.3),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(28.0),
-                                  child: Column(
-                                    children: [
-                                      Text("Your Final Score",
-                                          style: GoogleFonts.poppins(fontSize: 20, color: Colors.grey[700], fontWeight: FontWeight.w500)),
-                                      const SizedBox(height: 20),
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          Text(_score.toStringAsFixed(0),
-                                              style: GoogleFonts.poppins(fontSize: 64, fontWeight: FontWeight.bold, color: const Color(0xFF6C5CE7))),
-                                          Text(" / ${_fullMarks.toStringAsFixed(0)}",
-                                              style: GoogleFonts.poppins(fontSize: 28, color: Colors.grey[600])),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 16),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 10),
-                                        decoration: BoxDecoration(
-                                          color: passed ? Colors.green.shade600 : Colors.orange.shade600,
-                                          borderRadius: BorderRadius.circular(30),
-                                        ),
-                                        child: Text("${_percentageString}%",
-                                            style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 24),
-                              Card(
-                                elevation: 6,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(20.0),
-                                  child: Column(
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.all(12),
-                                            decoration: BoxDecoration(color: const Color(0xFF6C5CE7).withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-                                            child: const Icon(Icons.quiz_outlined, color: Color(0xFF6C5CE7), size: 28),
+
+                          // Score & Stats
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: Column(
+                              children: [
+                                // Final Score Card
+                                Card(
+                                  elevation: 14,
+                                  shadowColor: const Color(0xFF6C5CE7).withOpacity(0.35),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(28)),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(32.0),
+                                    child: Column(
+                                      children: [
+                                        Text(
+                                          "Your Final Score",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 22,
+                                            color: Colors.grey[700],
+                                            fontWeight: FontWeight.w600,
                                           ),
-                                          const SizedBox(width: 16),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(_quizTitle, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)),
-                                                Text("$totalQuestions Questions • Instant Quiz", style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600])),
-                                              ],
+                                        ),
+                                        const SizedBox(height: 28),
+                                        FittedBox(
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Text(
+                                                _score.toStringAsFixed(0),
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 84,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: const Color(0xFF6C5CE7),
+                                                ),
+                                              ),
+                                              Text(
+                                                " / ${_fullMarks.toStringAsFixed(0)}",
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 38,
+                                                  color: Colors.grey[600],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(height: 24),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 44, vertical: 16),
+                                          decoration: BoxDecoration(
+                                            color: passed
+                                                ? Colors.green.shade600
+                                                : Colors.orange.shade600,
+                                            borderRadius: BorderRadius.circular(32),
+                                          ),
+                                          child: Text(
+                                            "${_percentageString}%",
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 38,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white,
                                             ),
                                           ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 20),
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                        children: [
-                                          _buildStatCard(Icons.timer_outlined, "Time", "2m 30s"),
-                                          _buildStatCard(Icons.trending_up, "Accuracy", "${_percentageString}%"),
-                                          _buildStatCard(Icons.star_border, "Points", _score.toStringAsFixed(0)),
-                                        ],
-                                      ),
-                                    ],
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: 40),
-                            ],
+
+                                const SizedBox(height: 28),
+
+                                // Quiz Info + Stats Card
+                                Card(
+                                  elevation: 10,
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20)),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24.0),
+                                    child: Column(
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(14),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF6C5CE7)
+                                                    .withOpacity(0.12),
+                                                borderRadius:
+                                                BorderRadius.circular(16),
+                                              ),
+                                              child: const Icon(Icons.quiz_outlined,
+                                                  color: Color(0xFF6C5CE7), size: 32),
+                                            ),
+                                            const SizedBox(width: 16),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    _quizTitle,
+                                                    style: GoogleFonts.poppins(
+                                                        fontSize: 20,
+                                                        fontWeight:
+                                                        FontWeight.w600),
+                                                  ),
+                                                  Text(
+                                                    "$totalQuestions Questions • Instant Quiz",
+                                                    style: GoogleFonts.poppins(
+                                                        fontSize: 15,
+                                                        color: Colors.grey[600]),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 28),
+                                        Row(
+                                          mainAxisAlignment:
+                                          MainAxisAlignment.spaceEvenly,
+                                          children: [
+                                            _buildStatCard(Icons.timer_outlined,
+                                                "Time Taken", "2m 30s"),
+                                            _buildStatCard(Icons.trending_up,
+                                                "Accuracy", "${_percentageString}%"),
+                                            _buildStatCard(Icons.star,
+                                                "Points", _score.toStringAsFixed(0)),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                                const SizedBox(height: 80), // Clean bottom padding for share
+                              ],
+                            ),
                           ),
-                        ),
+                        ],
                       ),
+
+                      // Confetti (inside screenshot)
+                      if (passed)
+                        ConfettiWidget(
+                          confettiController: _confettiController,
+                          blastDirectionality: BlastDirectionality.explosive,
+                          emissionFrequency: 0.04,
+                          numberOfParticles: 80,
+                          gravity: 0.18,
+                          shouldLoop: false,
+                          colors: const [
+                            Colors.red,
+                            Colors.blue,
+                            Colors.green,
+                            Colors.yellow,
+                            Colors.purple,
+                            Colors.orange,
+                            Colors.pink
+                          ],
+                        ),
                     ],
                   ),
                 ),
               ),
-            ),
 
-            // BUTTONS (Not in screenshot)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
-              child: Column(
-                children: [
-                  // Share Button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton.icon(
-                      onPressed: _shareScreenshot,
-                      icon: const Icon(Icons.share, color: Colors.white),
-                      label: Text("Share My Result",
-                          style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade600,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+              // ==================== ACTION BUTTONS (OUTSIDE SCREENSHOT) ====================
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 40, 20, 50),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      height: 60,
+                      child: ElevatedButton.icon(
+                        onPressed: _shareScreenshot,
+                        icon: const Icon(Icons.share, size: 28),
+                        label: Text(
+                          "Share My Result",
+                          style: GoogleFonts.poppins(
+                              fontSize: 19, fontWeight: FontWeight.w600),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green.shade600,
+                          elevation: 8,
+                          shadowColor: Colors.green.withOpacity(0.5),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30)),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // REVIEW BUTTON — Now super fast & reliable
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton.icon(
-                      onPressed: _attemptId > 0 ? _navigateToReview : null,
-                      icon: const Icon(Icons.remove_red_eye_outlined, color: Colors.white),
-                      label: Text(
-                        _attemptId > 0 ? "Review Answers" : "Review Not Available",
-                        style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _attemptId > 0 ? const Color(0xFF6C5CE7) : Colors.grey,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Back to Quizzes
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: OutlinedButton.icon(
-                      onPressed: () => context.go('/quizzes'),
-                      icon: const Icon(Icons.arrow_back_ios_new),
-                      label: Text("Back to Quizzes", style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF6C5CE7),
-                        side: const BorderSide(color: Color(0xFF6C5CE7), width: 2),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 60,
+                      child: ElevatedButton.icon(
+                        onPressed: _attemptId > 0 ? _navigateToReview : null,
+                        icon: const Icon(Icons.remove_red_eye_outlined, size: 28),
+                        label: Text(
+                          _attemptId > 0 ? "Review Answers" : "Review Not Available",
+                          style: GoogleFonts.poppins(
+                              fontSize: 19, fontWeight: FontWeight.w600),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _attemptId > 0
+                              ? const Color(0xFF6C5CE7)
+                              : Colors.grey.shade400,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30)),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 60,
+                      child: OutlinedButton.icon(
+                        onPressed: () => context.go('/quizzes'),
+                        icon: const Icon(Icons.arrow_back_ios_new, size: 22),
+                        label: Text(
+                          "Back to Quizzes",
+                          style: GoogleFonts.poppins(
+                              fontSize: 19, fontWeight: FontWeight.w600),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF6C5CE7),
+                          side: const BorderSide(
+                              color: Color(0xFF6C5CE7), width: 2.8),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -377,18 +483,31 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen> {
     return Column(
       children: [
         Container(
-          width: 64,
-          height: 64,
+          width: 70,
+          height: 70,
           decoration: BoxDecoration(
-            gradient: LinearGradient(colors: [const Color(0xFF6C5CE7).withOpacity(0.15), const Color(0xFF5A4FCF).withOpacity(0.1)]),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFF6C5CE7).withOpacity(0.3)),
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFF6C5CE7).withOpacity(0.2),
+                const Color(0xFF5A4FCF).withOpacity(0.1)
+              ],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFF6C5CE7).withOpacity(0.4)),
           ),
-          child: Icon(icon, color: const Color(0xFF6C5CE7), size: 30),
+          child: Icon(icon, color: const Color(0xFF6C5CE7), size: 34),
         ),
-        const SizedBox(height: 12),
-        Text(value, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: const Color(0xFF6C5CE7))),
-        Text(label, style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade600)),
+        const SizedBox(height: 14),
+        Text(
+          value,
+          style: GoogleFonts.poppins(
+              fontSize: 20, fontWeight: FontWeight.bold, color: const Color(0xFF6C5CE7)),
+        ),
+        Text(
+          label,
+          style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey.shade600),
+          textAlign: TextAlign.center,
+        ),
       ],
     );
   }

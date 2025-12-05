@@ -895,6 +895,9 @@ class _InstantQuizPlayerScreenState extends ConsumerState<InstantQuizPlayerScree
         'percentage': (_score / fullMarks * 100).toStringAsFixed(1),
         'time_taken': totalTime,
         'passed': _score >= (fullMarks * 0.6),
+        'slug': widget.quiz['slug']?.toString().trim().isNotEmpty == true
+            ? widget.quiz['slug']
+            : widget.quiz['id'].toString(),   // fallback to quiz ID if no slug
       });
 
     } catch (e, stackTrace) {
@@ -965,6 +968,9 @@ class _InstantQuizPlayerScreenState extends ConsumerState<InstantQuizPlayerScree
             'percentage': (_score / fullMarks * 100).toStringAsFixed(1),
             'time_taken': _perQuestionTime * totalQuestions,
             'passed': _score >= (fullMarks * 0.6),
+            'slug': widget.quiz['slug']?.toString().trim().isNotEmpty == true
+                ? widget.quiz['slug']
+                : widget.quiz['id'].toString(),   // fallback to quiz ID if no slug
           });
         }
       }

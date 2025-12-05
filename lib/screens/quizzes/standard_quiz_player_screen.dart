@@ -603,6 +603,9 @@ class _StandardQuizPlayerScreenState extends ConsumerState<StandardQuizPlayerScr
         'percentage': (calculatedScore / fullMarks * 100).toStringAsFixed(1),
         'time_taken': totalTimeTaken,
         'passed': calculatedScore >= (fullMarks * 0.6),
+        'slug': widget.quiz['slug']?.toString().trim().isNotEmpty == true
+            ? widget.quiz['slug']
+            : widget.quiz['id'].toString(),   // fallback to quiz ID if no slug
       });
     } catch (e) {
       developer.log("❌ Submit error: $e");
