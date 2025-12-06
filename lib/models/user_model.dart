@@ -1,4 +1,4 @@
-// lib/models/user_model.dart   ← FINAL WORKING VERSION (NO FREEZED)
+// lib/models/user_model.dart ← UPDATED BUT SAFE
 class UserModel {
   final int id;
   final String email;
@@ -8,6 +8,10 @@ class UserModel {
   final int coins;
   final int streak;
 
+  // ← NEW: Progress tracking (computed at runtime)
+  final Map<String, double> courseProgress;        // courseId → 0.0 to 1.0
+  final Set<String> completedContentIds;           // content_id strings
+
   UserModel({
     required this.id,
     required this.email,
@@ -16,7 +20,10 @@ class UserModel {
     this.profilePicture,
     this.coins = 0,
     this.streak = 7,
-  });
+    Map<String, double>? courseProgress,
+    Set<String>? completedContentIds,
+  })  : courseProgress = courseProgress ?? {},
+        completedContentIds = completedContentIds ?? {};
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
     final data = json is List ? (json.isNotEmpty ? json[0] : {}) : (json['data'] ?? json);
@@ -30,19 +37,28 @@ class UserModel {
       streak: int.tryParse(data['streak']?.toString() ?? '7') ?? 7,
     );
   }
-}
 
-// Dummy models — will be replaced with real ones later
-class UserProgressModel {
-  final String? courseTitle;
-  final double? progressPercentage;
-
-  UserProgressModel({this.courseTitle, this.progressPercentage});
-}
-
-class CourseQuizModel {
-  final int? id;
-  final String? title;
-
-  CourseQuizModel({this.id, this.title});
+  UserModel copyWith({
+    int? id,
+    String? email,
+    String? name,
+    String? mobile,
+    String? profilePicture,
+    int? coins,
+    int? streak,
+    Map<String, double>? courseProgress,
+    Set<String>? completedContentIds,
+  }) {
+    return UserModel(
+      id: id ?? this.id,
+      email: email ?? this.email,
+      name: name ?? this.name,
+      mobile: mobile ?? this.mobile,
+      profilePicture: profilePicture ?? this.profilePicture,
+      coins: coins ?? this.coins,
+      streak: streak ?? this.streak,
+      courseProgress: courseProgress ?? this.courseProgress,
+      completedContentIds: completedContentIds ?? this.completedContentIds,
+    );
+  }
 }
