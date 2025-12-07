@@ -1,4 +1,4 @@
-// lib/models/user_model.dart ← UPDATED BUT SAFE
+// lib/models/user_model.dart
 class UserModel {
   final int id;
   final String email;
@@ -8,9 +8,9 @@ class UserModel {
   final int coins;
   final int streak;
 
-  // ← NEW: Progress tracking (computed at runtime)
-  final Map<String, double> courseProgress;        // courseId → 0.0 to 1.0
-  final Set<String> completedContentIds;           // content_id strings
+  // Progress fields – now properly populated
+  final Map<String, double> courseProgress; // courseId → progress (0.0 to 1.0)
+  final Set<String> completedContentIds;
 
   UserModel({
     required this.id,
@@ -23,10 +23,33 @@ class UserModel {
     Map<String, double>? courseProgress,
     Set<String>? completedContentIds,
   })  : courseProgress = courseProgress ?? {},
-        completedContentIds = completedContentIds ?? {};
+        completedContentIds = Set.from(completedContentIds ?? {});
 
+  // Updated factory to support both plain user API and merged progress API
   factory UserModel.fromJson(Map<String, dynamic> json) {
-    final data = json is List ? (json.isNotEmpty ? json[0] : {}) : (json['data'] ?? json);
+    // Handle different API variations: sometimes json['data'], sometimes direct map, sometimes list
+    final data = json is List
+        ? (json.isNotEmpty ? json[0] : {})
+        : (json['data'] ?? json);
+
+    // Extract progress if present (this is what your merged provider adds)
+    Map<String, dynamic> progressMap = {};
+    Set<String> completedIds = {};
+
+    if (data['course_progress'] != null) {
+      progressMap = Map<String, dynamic>.from(data['course_progress']);
+    }
+    if (data['completed_contents'] is List) {
+      completedIds = (data['completed_contents'] as List).cast<String>().toSet();
+    }
+
+    // Convert progressMap { "5": "0.75" } → { "5": 0.75 }
+    final Map<String, double> parsedProgress = {};
+    progressMap.forEach((key, value) {
+      final double? prog = double.tryParse(value.toString());
+      if (prog != null) parsedProgress[key] = prog.clamp(0.0, 1.0);
+    });
+
     return UserModel(
       id: data['id'] ?? 0,
       email: data['email'] ?? 'user@example.com',
@@ -35,6 +58,8 @@ class UserModel {
       profilePicture: data['profile_picture'],
       coins: int.tryParse(data['coins']?.toString() ?? '0') ?? 0,
       streak: int.tryParse(data['streak']?.toString() ?? '7') ?? 7,
+      courseProgress: parsedProgress,
+      completedContentIds: completedIds,
     );
   }
 
