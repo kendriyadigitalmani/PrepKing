@@ -7,7 +7,9 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
 
-import '../../providers/course_providers.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/services/api_service.dart'; // ← ADD THIS
+import '../../providers/user_progress_merged_provider.dart';
 import '../../providers/user_progress_merged_provider.dart';
 
 /// Provider that returns list of all courses

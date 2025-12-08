@@ -1,10 +1,9 @@
+// lib/providers/course_providers.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/services/api_service.dart';
 
-final apiServiceProvider = Provider((ref) => ApiService());
-
 final classesProvider = FutureProvider<List<dynamic>>((ref) async {
-  final api = ref.read(apiServiceProvider);
+  final api = ref.read(apiServiceProvider); // ← Now uses the one from api_service.dart
   final res = await api.get('/class');
   return res['data'] ?? [];
 });
@@ -23,7 +22,7 @@ final courseDetailProvider = FutureProvider.family<Map<String, dynamic>, int>((r
 
 final contentListProvider = FutureProvider.family<List<dynamic>, int>((ref, courseId) async {
   final api = ref.read(apiServiceProvider);
-  final res = await api.get('/content/course/$courseId');
+  final res = await api.get('/course/$courseId/contents'); // ← FIXED: Correct endpoint
   return res['data'] ?? [];
 });
 
