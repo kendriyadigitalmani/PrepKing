@@ -33,6 +33,10 @@ dependencies:
   uuid: ^4.5.0
   vibration: ^3.1.4
   cupertino_icons: ^1.0.8
+  flutter_html: ^3.0.0-beta.2
+  flutter_markdown: ^0.7.1
+  youtube_player_flutter: ^8.1.2
+  syncfusion_flutter_pdfviewer: ^24.2.9
 
 dev_dependencies:
   flutter_test:
