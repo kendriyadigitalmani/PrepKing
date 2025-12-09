@@ -49,23 +49,23 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
         ],
       ),
     );
-
     if (!(confirmed ?? false)) return;
 
     setState(() => _isEnrolling = true);
-
     try {
       final api = ref.read(apiServiceProvider);
+
+      // ✅ FIXED: Send userid & courseid as QUERY parameters, NOT in body
       await api.post(
         '/course/${widget.courseId}/enroll',
-        {
-          'courseid': widget.courseId.toString(),
+        {}, // empty body (required by signature)
+        query: {
           'userid': user.id.toString(),
+          'courseid': widget.courseId.toString(),
         },
       );
 
       ref.invalidate(preciseCourseProgressProvider((widget.courseId, user.id)));
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Successfully enrolled!")),
       );
@@ -73,7 +73,11 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
       String msg = "Enrollment failed!";
       if (e is DioException) {
         final data = e.response?.data;
-        msg = data is Map ? jsonEncode(data) : data.toString();
+        if (data is Map<String, dynamic> && data.containsKey('message')) {
+          msg = data['message'];
+        } else {
+          msg = data is Map ? jsonEncode(data) : data.toString();
+        }
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(backgroundColor: Colors.red, content: Text(msg)),

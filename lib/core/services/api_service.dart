@@ -12,17 +12,16 @@ class ApiService {
 
   ApiService() {
     _dio = Dio(BaseOptions(
-      baseUrl: ApiConstants.baseUrl, // e.g., "https://quizard.in/api_002.php"
-      connectTimeout: const Duration(seconds: 20),
-      receiveTimeout: const Duration(seconds: 20),
+      baseUrl: ApiConstants.baseUrl,
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 30),
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      validateStatus: (status) => status! < 500, // Don't throw on 4xx
+      validateStatus: (status) => status! < 500,
     ));
 
-    // Detailed logging (only in debug mode)
     if (kDebugMode) {
       _dio.interceptors.add(LogInterceptor(
         request: true,
@@ -36,11 +35,8 @@ class ApiService {
     }
   }
 
-  // Generic GET
-  Future<Map<String, dynamic>> get(
-      String endpoint, {
-        Map<String, dynamic>? query,
-      }) async {
+  // Generic Methods
+  Future<Map<String, dynamic>> get(String endpoint, {Map<String, dynamic>? query}) async {
     try {
       final response = await _dio.get(
         endpoint,
@@ -53,29 +49,27 @@ class ApiService {
     }
   }
 
-  // Generic POST - Sends data in body (correct for your backend)
   Future<Map<String, dynamic>> post(
       String endpoint,
-      Map<String, dynamic> data,
-      ) async {
+      Map<String, dynamic> data, {
+        Map<String, dynamic>? query,
+      }) async {
     try {
       debugPrint('POST → $endpoint | Body: ${jsonEncode(data)}');
-      final response = await _dio.post(endpoint, data: data);
+      final response = await _dio.post(
+        endpoint,
+        queryParameters: query?..map((k, v) => MapEntry(k, v.toString())),
+        data: data,
+      );
       return _handleResponse(response);
     } catch (e) {
       debugPrint('POST Error [$endpoint]: $e');
-      if (e is DioException) {
-        debugPrint('Response: ${e.response?.data}');
-      }
+      if (e is DioException) debugPrint('Response: ${e.response?.data}');
       rethrow;
     }
   }
 
-  // Generic PUT
-  Future<Map<String, dynamic>> put(
-      String endpoint,
-      Map<String, dynamic> data,
-      ) async {
+  Future<Map<String, dynamic>> put(String endpoint, Map<String, dynamic> data) async {
     try {
       final response = await _dio.put(endpoint, data: data);
       return _handleResponse(response);
@@ -85,7 +79,6 @@ class ApiService {
     }
   }
 
-  // Generic DELETE
   Future<Map<String, dynamic>> delete(String endpoint) async {
     try {
       final response = await _dio.delete(endpoint);
@@ -96,7 +89,47 @@ class ApiService {
     }
   }
 
-  // MARK: Quiz Attempts Helpers
+  // MARK: Content CRUD - Fully Safe & Typed
+  Future<List<Map<String, dynamic>>> getAllContents() async {
+    try {
+      final response = await get('/content');
+      final data = response['data'] as List<dynamic>? ?? [];
+      return data.cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('getAllContents error: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> getContentById(int id) async {
+    try {
+      final response = await get('/content/$id');
+      return response['data'] as Map<String, dynamic>?;
+    } catch (e) {
+      debugPrint('getContentById($id) error: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> createContent(Map<String, dynamic> data) async {
+    return await post('/content', data);
+  }
+
+  Future<Map<String, dynamic>> updateContent(int id, Map<String, dynamic> data) async {
+    return await put('/content/$id', data);
+  }
+
+  Future<bool> deleteContent(int id) async {
+    try {
+      await delete('/content/$id');
+      return true;
+    } catch (e) {
+      debugPrint('deleteContent($id) failed: $e');
+      return false;
+    }
+  }
+
+  // MARK: Quiz Attempts (unchanged - already perfect)
   Future<List<Map<String, dynamic>>> getQuizAttempts({
     required int courseQuizId,
     required int userId,
@@ -134,7 +167,7 @@ class ApiService {
     return await put('/quiz_attempt/$attemptId', payload);
   }
 
-  // MARK: Central Response Handler
+  // MARK: Central Response Handler (Improved Safety)
   Map<String, dynamic> _handleResponse(Response response) {
     final method = response.requestOptions.method;
     final path = response.requestOptions.path;
@@ -144,25 +177,24 @@ class ApiService {
 
     dynamic data = response.data;
 
-    // Parse JSON if string
     if (data is String) {
       try {
         data = jsonDecode(data);
       } catch (e) {
         debugPrint('JSON Parse failed: $e');
+        throw Exception('Invalid JSON response');
       }
     }
 
-    // Ensure it's a map
     if (data is! Map<String, dynamic>) {
-      throw Exception('Invalid API response format');
+      debugPrint('Invalid response format: $data');
+      throw Exception('API response must be a JSON object');
     }
 
-    // Handle API-level errors
     if (data['success'] == false) {
       final message = data['message'] ?? 'Unknown error';
-      if (message == 'Resource not found') {
-        return {'success': true, 'data': []};
+      if (message.contains('not found') || message.contains('Resource')) {
+        return {'success': true, 'data': null}; // Graceful for missing content
       }
       throw Exception('API Error: $message');
     }
