@@ -1,3 +1,5 @@
+// lib/screens/content_list_screen.dart
+
 import 'package:animate_do/animate_do.dart';
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
@@ -5,8 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
-import '../../providers/course_providers.dart';
-import '../../providers/user_progress_merged_provider.dart'; // ← NEW
+
+import '../../providers/course_providers.dart';           // Contains courseContentsProvider
+import '../../providers/user_progress_merged_provider.dart'; // Contains userWithProgressProvider
 
 class ContentListScreen extends ConsumerStatefulWidget {
   final int courseId;
@@ -40,8 +43,9 @@ class _ContentListScreenState extends ConsumerState<ContentListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final contentsAsync = ref.watch(contentListProvider(widget.courseId));
-    final userProgressAsync = ref.watch(userWithProgressProvider); // ← FIXED
+    // FIXED: Use the correct provider
+    final contentsAsync = ref.watch(courseContentsProvider(widget.courseId));
+    final userProgressAsync = ref.watch(userWithProgressProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -61,9 +65,11 @@ class _ContentListScreenState extends ConsumerState<ContentListScreen> {
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (_, __) => const Center(child: Text("Error loading content")),
                 data: (contents) {
-                  // Check if course is fully completed
-                  final allCompleted = contents.every((c) => completedIds.contains(c['id'].toString()));
-                  if (allCompleted && contents.isNotEmpty) {
+                  // Auto-celebrate when course is fully completed
+                  final allCompleted = contents.isNotEmpty &&
+                      contents.every((c) => completedIds.contains(c['id'].toString()));
+
+                  if (allCompleted) {
                     WidgetsBinding.instance.addPostFrameCallback((_) => _showCompletionCelebration());
                   }
 
@@ -74,8 +80,10 @@ class _ContentListScreenState extends ConsumerState<ContentListScreen> {
                       final content = contents[i];
                       final contentId = content['id'].toString();
                       final isCompleted = completedIds.contains(contentId);
+
+                      // Lock next lesson until previous is completed
                       final prevContentId = i > 0 ? contents[i - 1]['id'].toString() : null;
-                      final isLocked = i > 0 && !completedIds.contains(prevContentId!);
+                      final isLocked = i > 0 && prevContentId != null && !completedIds.contains(prevContentId);
 
                       return FadeInLeft(
                         delay: Duration(milliseconds: i * 100),
@@ -87,7 +95,9 @@ class _ContentListScreenState extends ConsumerState<ContentListScreen> {
                             leading: CircleAvatar(
                               backgroundColor: isCompleted ? Colors.green : const Color(0xFF6C5CE7),
                               child: Icon(
-                                isCompleted ? Icons.check : (isLocked ? Icons.lock : Icons.play_arrow),
+                                isCompleted
+                                    ? Icons.check
+                                    : (isLocked ? Icons.lock : Icons.play_arrow),
                                 color: Colors.white,
                               ),
                             ),
@@ -119,6 +129,8 @@ class _ContentListScreenState extends ConsumerState<ContentListScreen> {
               );
             },
           ),
+
+          // Confetti Celebration
           Align(
             alignment: Alignment.topCenter,
             child: ConfettiWidget(

@@ -1,3 +1,5 @@
+// lib/screens/course_detail_screen.dart
+import 'dart:convert';
 import 'package:animate_do/animate_do.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,20 +7,11 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:intl/intl.dart';
+import 'package:dio/dio.dart';
 import '../../providers/course_providers.dart';
+import '../../providers/course_progress_provider.dart';
 import '../../providers/user_progress_merged_provider.dart';
 import '../../core/services/api_service.dart';
-
-// New provider to fetch course contents
-final courseContentsProvider = FutureProvider.family<List<Map<String, dynamic>>, int>((ref, courseId) async {
-  final api = ref.read(apiServiceProvider);
-  final response = await api.get('/course/$courseId/contents');
-  if (response['success'] == true) {
-    return List<Map<String, dynamic>>.from(response['data'] ?? []);
-  }
-  return [];
-});
 
 class CourseDetailScreen extends ConsumerStatefulWidget {
   final int courseId;
@@ -30,25 +23,10 @@ class CourseDetailScreen extends ConsumerStatefulWidget {
 
 class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
   bool _isEnrolling = false;
-  bool _isEnrolled = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkEnrollmentStatus();
-  }
-
-  Future<void> _checkEnrollmentStatus() async {
-    final user = ref.read(userWithProgressProvider).value;
-    if (user == null) return;
-    final progress = user.courseProgress[widget.courseId.toString()];
-    setState(() {
-      _isEnrolled = progress != null && progress > 0;
-    });
-  }
 
   Future<void> _enrollInCourse() async {
-    final user = ref.read(userWithProgressProvider).value;
+    final userAsync = ref.read(userWithProgressProvider);
+    final user = userAsync.asData?.value;
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please log in to enroll")),
@@ -75,75 +53,129 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
     if (!(confirmed ?? false)) return;
 
     setState(() => _isEnrolling = true);
+
     try {
       final api = ref.read(apiServiceProvider);
-      await api.post('/course/enroll', {
-        'userid': user.id,
-        'courseid': widget.courseId,
-      });
-      ref.invalidate(userWithProgressProvider);
-      setState(() {
-        _isEnrolled = true;
-        _isEnrolling = false;
-      });
+      await api.post(
+        '/course/${widget.courseId}/enroll',
+        {
+          'courseid': widget.courseId.toString(),
+          'userid': user.id.toString(),
+        },
+      );
+
+      ref.invalidate(preciseCourseProgressProvider((widget.courseId, user.id)));
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Successfully enrolled!")),
       );
     } catch (e) {
-      setState(() => _isEnrolling = false);
+      String msg = "Enrollment failed!";
+      if (e is DioException) {
+        final data = e.response?.data;
+        msg = data is Map ? jsonEncode(data) : data.toString();
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Enrollment failed: $e")),
+        SnackBar(backgroundColor: Colors.red, content: Text(msg)),
       );
+      debugPrint('Enrollment Error: $e');
+    } finally {
+      setState(() => _isEnrolling = false);
     }
   }
 
-  // Proper slug sharing (same as QuizDetailScreen)
-  void _shareCourse(String title, dynamic slugOrId) {
-    final slug = slugOrId?.toString() ?? widget.courseId.toString();
-    final url = "https://prepking.online/c/$slug";
-    Share.share("$title\n\nJoin now: $url", subject: "Check out this course on PrepKing!");
+  void _shareCourse(String title, dynamic slug) {
+    final url = "https://prepking.online/c/${slug ?? widget.courseId}";
+    Share.share("$title\n\nJoin now: $url", subject: "Check out this course!");
   }
 
-  String _getButtonText(double progress) {
-    if (progress >= 1.0) return "View Certificate";
-    if (_isEnrolled && progress > 0) return "Continue Learning";
-    if (_isEnrolled) return "Start Learning";
-    return "Enroll Now";
-  }
+  // FIXED: Extract real lesson count from PHP serialized content_ids
+  int _getLessonCount(Map<String, dynamic> course) {
+    final String? serialized = course['content_ids'] as String?;
+    if (serialized == null || serialized.isEmpty) return 0;
 
-  IconData _getButtonIcon(double progress) {
-    if (progress >= 1.0) return Icons.card_giftcard_rounded;
-    if (_isEnrolled && progress > 0) return Icons.play_arrow_rounded;
-    if (_isEnrolled) return Icons.play_circle_fill;
-    return Icons.rocket_launch_rounded;
+    // PHP serialized array starts with a:{count}:{
+    final regExp = RegExp(r'a:(\d+):');
+    final match = regExp.firstMatch(serialized);
+    if (match != null) {
+      return int.tryParse(match.group(1)!) ?? 0;
+    }
+    return 0;
   }
 
   @override
   Widget build(BuildContext context) {
     final courseAsync = ref.watch(courseDetailProvider(widget.courseId));
-    final userAsync = ref.watch(userWithProgressProvider);
     final contentsAsync = ref.watch(courseContentsProvider(widget.courseId));
+    final userAsync = ref.watch(userWithProgressProvider);
+    final userId = userAsync.asData?.value?.id ?? 0;
 
+    if (userId == 0) {
+      return _buildUI(courseAsync, contentsAsync, progress: 0.0, isEnrolled: false, isCompleted: false);
+    }
+
+    final progressAsync = ref.watch(preciseCourseProgressProvider((widget.courseId, userId)));
+    final double progress = progressAsync.when(
+      data: (data) => data == null
+          ? 0.0
+          : (double.tryParse(data['progress_percentage'].toString()) ?? 0.0) / 100.0,
+      loading: () => userAsync.value?.courseProgress[widget.courseId.toString()] ?? 0.0,
+      error: (_, __) => userAsync.value?.courseProgress[widget.courseId.toString()] ?? 0.0,
+    );
+
+    final bool isEnrolled = progressAsync.hasValue && progressAsync.value != null;
+    final bool isCompleted = progress >= 0.99;
+
+    return _buildUI(
+      courseAsync,
+      contentsAsync,
+      progress: progress.clamp(0.0, 1.0),
+      isEnrolled: isEnrolled,
+      isCompleted: isCompleted,
+    );
+  }
+
+  Widget _buildUI(
+      AsyncValue<Map<String, dynamic>> courseAsync,
+      AsyncValue<List<Map<String, dynamic>>> contentsAsync, {
+        required double progress,
+        required bool isEnrolled,
+        required bool isCompleted,
+      }) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FF),
       body: courseAsync.when(
         loading: () => const Center(child: CircularProgressIndicator(color: Color(0xFF6C5CE7))),
-        error: (_, __) => Center(child: Text("Failed to load course", style: GoogleFonts.poppins())),
+        error: (err, _) => Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error, size: 80, color: Colors.red),
+              const SizedBox(height: 16),
+              Text("Failed to load course", style: GoogleFonts.poppins(fontSize: 18)),
+              ElevatedButton.icon(
+                onPressed: () => ref.invalidate(courseDetailProvider(widget.courseId)),
+                icon: const Icon(Icons.refresh),
+                label: const Text("Retry"),
+              ),
+            ],
+          ),
+        ),
         data: (course) {
-          final progress = userAsync.value?.courseProgress[widget.courseId.toString()] ?? 0.0;
-          final slug = course['slug'] ?? course['id'].toString();
           final title = course['title'] ?? 'Course';
           final thumbnail = course['thumbnail'];
+          final slug = course['slug'] ?? course['id'].toString();
+
+          // FIX APPLIED HERE
+          final int lessonCount = _getLessonCount(course);
 
           return Stack(
             children: [
               CustomScrollView(
                 slivers: [
-                  // Collapsible Header (Kept Intact)
                   SliverAppBar(
                     expandedHeight: 340,
                     pinned: true,
-                    backgroundColor: Colors.transparent,
                     flexibleSpace: FlexibleSpaceBar(
                       background: Stack(
                         fit: StackFit.expand,
@@ -152,7 +184,7 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
                               ? Image.network(thumbnail, fit: BoxFit.cover)
                               : Lottie.asset('assets/lottie/learning.json', fit: BoxFit.cover),
                           Container(
-                            decoration: BoxDecoration(
+                            decoration: const BoxDecoration(
                               gradient: LinearGradient(
                                 begin: Alignment.topCenter,
                                 end: Alignment.bottomCenter,
@@ -168,27 +200,18 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    title,
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 28,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
+                                  Text(title, style: GoogleFonts.poppins(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white)),
                                   const SizedBox(height: 8),
-                                  Row(
+                                  Wrap(
+                                    spacing: 8,
                                     children: [
                                       Chip(
                                         backgroundColor: Colors.purple.shade100.withOpacity(0.9),
-                                        label: Text(course['topic'] ?? 'General',
-                                            style: GoogleFonts.poppins(fontSize: 12, color: Colors.purple.shade900)),
+                                        label: Text(course['topic'] ?? 'General', style: GoogleFonts.poppins(fontSize: 12)),
                                       ),
-                                      const SizedBox(width: 8),
                                       Chip(
                                         backgroundColor: Colors.orange.shade100.withOpacity(0.9),
-                                        label: Text(course['difficulty'] ?? 'Medium',
-                                            style: GoogleFonts.poppins(fontSize: 12, color: Colors.orange.shade900)),
+                                        label: Text(course['difficulty'] ?? 'Medium', style: GoogleFonts.poppins(fontSize: 12)),
                                       ),
                                     ],
                                   ),
@@ -208,7 +231,6 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
                       ),
                     ),
                   ),
-
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
@@ -216,9 +238,7 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const SizedBox(height: 16),
-
-                          // Progress Card
-                          if (_isEnrolled && progress > 0)
+                          if (isEnrolled && progress > 0.0)
                             FadeInUp(
                               child: Container(
                                 padding: const EdgeInsets.all(20),
@@ -226,7 +246,7 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
                                 decoration: BoxDecoration(
                                   color: Colors.white,
                                   borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 15, offset: Offset(0, 8))],
+                                  boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 15, offset: const Offset(0, 8))],
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -245,7 +265,7 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
                                           ),
                                         ),
                                         const SizedBox(width: 12),
-                                        Text("${(progress * 100).toInt()}%", style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF6C5CE7))),
+                                        Text("${(progress * 100).toInt()}%", style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: const Color(0xFF6C5CE7))),
                                       ],
                                     ),
                                   ],
@@ -253,65 +273,51 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
                               ),
                             ),
 
-                          // COURSE DETAILS Section
-                          Text("COURSE DETAILS", style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87)),
+                          Text("COURSE DETAILS", style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 16),
-                          _buildInfoCard(Icons.play_circle_outline, "${course['lessons_count'] ?? contentsAsync.asData?.value.length ?? 'N/A'} Lessons", "Total lessons"),
+
+                          // FIXED LINE: Now shows correct number of lessons
+                          _buildInfoCard(Icons.play_circle_outline, lessonCount > 0 ? "$lessonCount Lessons" : "N/A Lessons", "Total lessons"),
                           const SizedBox(height: 12),
-                          _buildInfoCard(Icons.access_time, "${course['duration_minutes'] ?? '480'} mins", "Estimated duration"),
+                          _buildInfoCard(Icons.access_time, "${course['duration_minutes'] ?? '60'} mins", "Duration"),
                           const SizedBox(height: 12),
                           _buildInfoCard(Icons.card_giftcard, course['certificate_enabled'] == 1 ? "Certificate Included" : "No Certificate", ""),
 
                           const SizedBox(height: 32),
-
-                          // LESSONS Section (Non-clickable preview)
-                          Text("LESSONS", style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87)),
+                          Text("LESSONS", style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 16),
 
                           contentsAsync.when(
                             loading: () => const Center(child: CircularProgressIndicator(color: Color(0xFF6C5CE7))),
-                            error: (_, __) => Text("Failed to load lessons", style: GoogleFonts.poppins(color: Colors.red)),
-                            data: (contents) {
-                              if (contents.isEmpty) {
-                                return Container(
-                                  padding: const EdgeInsets.all(32),
-                                  decoration: BoxDecoration(color: Colors.grey[50], borderRadius: BorderRadius.circular(16)),
-                                  child: Center(
-                                    child: Text("No lessons available yet", style: GoogleFonts.poppins(color: Colors.grey[600])),
+                            error: (_, __) => const Text("Failed to load lessons", style: TextStyle(color: Colors.red)),
+                            data: (contents) => contents.isEmpty
+                                ? const Text("No lessons available yet")
+                                : ListView.separated(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: contents.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              itemBuilder: (context, i) {
+                                final c = contents[i];
+                                final isCompleted = ref.read(userWithProgressProvider).asData?.value?.completedContentIds.contains(c['id'].toString()) ?? false;
+                                return ListTile(
+                                  enabled: isEnrolled,
+                                  leading: CircleAvatar(
+                                    backgroundColor: isCompleted ? Colors.green : Colors.grey[300],
+                                    child: isCompleted
+                                        ? const Icon(Icons.check, color: Colors.white)
+                                        : Text("${i + 1}", style: const TextStyle(color: Colors.white)),
                                   ),
+                                  title: Text(c['title'] ?? "Lesson ${i + 1}", style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                                  subtitle: c['duration_minutes'] != null ? Text("${c['duration_minutes']} mins") : null,
+                                  trailing: isEnrolled ? const Icon(Icons.chevron_right) : const Icon(Icons.lock_outline),
+                                  onTap: isEnrolled ? () => context.push('/courses/content/${widget.courseId}/${c['id']}') : null,
                                 );
-                              }
-                              return ListView.separated(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                itemCount: contents.length,
-                                separatorBuilder: (_, __) => const Divider(height: 1),
-                                itemBuilder: (context, index) {
-                                  final content = contents[index];
-                                  final isCompleted = userAsync.value?.completedContentIds.contains(content['id'].toString()) ?? false;
-                                  return ListTile(
-                                    enabled: false,
-                                    leading: CircleAvatar(
-                                      backgroundColor: isCompleted ? Colors.green : Colors.grey[300],
-                                      child: isCompleted
-                                          ? const Icon(Icons.check, color: Colors.white)
-                                          : Text("${index + 1}", style: const TextStyle(color: Colors.white)),
-                                    ),
-                                    title: Text(
-                                      content['title'] ?? "Lesson ${index + 1}",
-                                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                                    ),
-                                    subtitle: content['duration_minutes'] != null
-                                        ? Text("${content['duration_minutes']} mins")
-                                        : null,
-                                    trailing: Icon(Icons.lock_outline, color: Colors.grey[400]),
-                                  );
-                                },
-                              );
-                            },
+                              },
+                            ),
                           ),
 
-                          const SizedBox(height: 120), // Space for FAB
+                          const SizedBox(height: 120),
                         ],
                       ),
                     ),
@@ -319,31 +325,42 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
                 ],
               ),
 
-              // Smart Floating Action Button
+              // Bottom Button
               Positioned(
                 bottom: 30,
                 left: 24,
                 right: 24,
                 child: FadeInUp(
-                  delay: const Duration(milliseconds: 600),
                   child: ElevatedButton.icon(
                     onPressed: _isEnrolling
                         ? null
-                        : () async {
-                      if (progress >= 1.0) {
-                        // Handle certificate view later
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Certificate feature coming soon!")));
-                      } else if (_isEnrolled) {
+                        : () {
+                      if (isCompleted) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Certificate coming soon!")));
+                      } else if (isEnrolled) {
                         context.push('/courses/content/${widget.courseId}');
                       } else {
-                        await _enrollInCourse();
+                        _enrollInCourse();
                       }
                     },
                     icon: _isEnrolling
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white))
-                        : Icon(_getButtonIcon(progress), size: 28),
+                        : Icon(
+                      isCompleted
+                          ? Icons.card_giftcard_rounded
+                          : isEnrolled
+                          ? (progress > 0 ? Icons.play_arrow_rounded : Icons.play_circle_fill)
+                          : Icons.rocket_launch_rounded,
+                      size: 28,
+                    ),
                     label: Text(
-                      _isEnrolling ? "Enrolling..." : _getButtonText(progress),
+                      _isEnrolling
+                          ? "Enrolling..."
+                          : isCompleted
+                          ? "View Certificate"
+                          : isEnrolled
+                          ? (progress > 0 ? "Continue Learning" : "Start Learning")
+                          : "Enroll Now",
                       style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600),
                     ),
                     style: ElevatedButton.styleFrom(
@@ -352,7 +369,6 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 18),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                       elevation: 12,
-                      shadowColor: const Color(0xFF6C5CE7).withOpacity(0.5),
                     ),
                   ),
                 ),
@@ -377,10 +393,7 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
           children: [
             Container(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF6C5CE7).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(16),
-              ),
+              decoration: BoxDecoration(color: const Color(0xFF6C5CE7).withOpacity(0.1), borderRadius: BorderRadius.circular(16)),
               child: Icon(icon, color: const Color(0xFF6C5CE7), size: 28),
             ),
             const SizedBox(width: 16),
@@ -388,8 +401,7 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold)),
-                if (subtitle.isNotEmpty)
-                  Text(subtitle, style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[600])),
+                if (subtitle.isNotEmpty) Text(subtitle, style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[600])),
               ],
             ),
           ],

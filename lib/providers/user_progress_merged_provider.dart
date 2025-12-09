@@ -1,37 +1,49 @@
 // lib/providers/user_progress_merged_provider.dart
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user_model.dart';
 import 'user_provider.dart';
-import 'course_providers.dart';
+import '../core/services/api_service.dart';
 
+/// Global progress (fast, for My Courses list, dashboard etc.)
+final userProgressProvider = FutureProvider.family<List<Map<String, dynamic>>, int>((ref, userId) async {
+  final api = ref.read(apiServiceProvider);
+  try {
+    final response = await api.get('/user_progress', query: {'user_id': userId.toString()});
+    if (response['success'] == true) {
+      final data = response['data'] as List<dynamic>? ?? [];
+      return data.cast<Map<String, dynamic>>();
+    }
+    debugPrint('user_progress API failed: ${response['message']}');
+    return [];
+  } catch (e) {
+    debugPrint('Error fetching global user progress: $e');
+    return [];
+  }
+});
+
+/// FINAL MERGED PROVIDER: Current user + progress
 final userWithProgressProvider = FutureProvider<UserModel>((ref) async {
   final userAsync = await ref.watch(currentUserProvider.future);
   if (userAsync == null) throw Exception("User not logged in");
 
   final userId = userAsync.id;
-
-  // Fetch all progress entries
-  final progressList = await ref.watch(userProgressProvider(userId).future);
+  final globalProgressList = await ref.watch(userProgressProvider(userId).future);
 
   final Map<String, double> courseProgress = {};
-  final Set<String> completedContentIds = {};
+  final Set<String> completedContentIds = <String>{};
 
-  for (final p in progressList) {
+  for (final p in globalProgressList) {
     final courseId = p['course_id']?.toString();
     final contentId = p['content_id']?.toString();
-    final progressVal = double.tryParse(p['progress_percentage']?.toString() ?? '0') ?? 0.0;
-    final completed = p['completed'] == 1 || p['completed'] == true;
+    final progressPercentage = double.tryParse(p['progress_percentage']?.toString() ?? '0') ?? 0.0;
+    final isCompleted = p['completed'] == 1 || p['completed'] == true;
 
-    if (contentId != null && completed) {
+    if (contentId != null && isCompleted) {
       completedContentIds.add(contentId);
     }
-
     if (courseId != null) {
-      final current = courseProgress[courseId] ?? 0.0;
-      courseProgress[courseId] = (progressVal / 100.0).clamp(0.0, 1.0);
-      if (progressVal > current * 100) {
-        courseProgress[courseId] = progressVal / 100.0;
-      }
+      courseProgress[courseId] = (progressPercentage / 100.0).clamp(0.0, 1.0);
     }
   }
 
