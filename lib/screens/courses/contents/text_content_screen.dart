@@ -65,14 +65,28 @@ class TextContentScreen extends StatelessWidget {
 
           // Body Content
           if (isHtml && body != null)
-            Html(
-              data: body,
-              style: {
-                "body": Style(fontSize: FontSize(17), lineHeight: LineHeight(1.7)),
-                "h1,h2,h3": Style(fontWeight: FontWeight.bold, fontSize: FontSize(22)),
-                "img": Style(width: Width(100, Unit.percent), margin: Margin.all(10)),
-              },
-            )
+            if (isHtml && body != null)
+              Html(
+                data: body,
+                style: {
+                  "body": Style(
+                    fontSize: FontSize(17),
+                    lineHeight: LineHeight(1.7),
+                  ),
+                  "h1,h2,h3": Style(
+                    fontWeight: FontWeight.bold,
+                    fontSize: FontSize(22),
+                  ),
+                  "img": Style(
+                    width: Width(100, Unit.percent),
+                    height: Height.auto(),
+                    margin: Margin.symmetric(vertical: 20),
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                    display: Display.block,
+                    alignment: Alignment.center,
+                  ),
+                },
+              )
           else if (body != null && body.trim().isNotEmpty)
             MarkdownBody(
               data: body,

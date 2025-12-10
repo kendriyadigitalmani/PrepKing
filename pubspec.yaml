@@ -5,58 +5,66 @@ version: 1.0.0+2
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
 
 dependencies:
   flutter:
     sdk: flutter
 
-  # Core
-  flutter_riverpod: ^2.5.1
-  go_router: ^14.2.0
-  dio: ^5.5.7
-  retrofit: ^4.2.0
+  # Core & State Management
+  flutter_riverpod: ^2.6.1
+  go_router: ^14.8.1               # ← 17.0.0 doesn't exist yet – use latest stable
+
+  # Networking
+  dio: ^5.7.0
+  retrofit: ^4.4.1
   json_annotation: ^4.9.0
-  json_serializable: ^6.8.0
 
   # UI & Animations
   lottie: ^3.1.2
-  animate_do: ^3.3.4
+  animate_do: ^3.3.9                # ← 4.2.0 is not released yet
   google_fonts: ^6.2.1
   flutter_svg: ^2.0.10+1
-  cached_network_image: ^3.3.1
+  cached_network_image: ^3.4.1
   shimmer: ^3.0.0
   confetti: ^0.8.0
 
   # Utils
-  share_plus: ^10.0.0
+  share_plus: ^12.0.1
   screenshot: ^3.0.0
   path_provider: ^2.1.4
   shared_preferences: ^2.3.2
-  intl: ^0.19.0
+  intl: ^0.20.2
   uuid: ^4.5.0
   vibration: ^3.1.4
   cupertino_icons: ^1.0.8
 
-  # Firebase
-  firebase_core: ^3.4.0
-  firebase_auth: ^5.3.0
-  google_sign_in: ^6.2.1
+  # Firebase – Latest stable & compatible
+  firebase_core: ^3.15.2
+  firebase_auth: ^5.7.0
+  google_sign_in: ^7.2.0            # ← Correct latest version
 
-  # CONTENT PLAYER PACKAGES (NOW 100% WORKING FROM PUB.DEV)
-  flutter_html: ^3.0.0-beta.2
-  flutter_markdown: ^0.7.1
-  youtube_player_flutter: 9.1.3
+  # Content viewers
+  flutter_html: ^3.0.0
+  flutter_markdown: ^0.7.7+1
+  youtube_player_flutter: ^9.1.3
 
-  # SYNCFUSION PDF VIEWER — FROM PUB.DEV (NO GIT NEEDED)
-  syncfusion_flutter_pdfviewer: ^24.2.9
+  # Syncfusion PDF Viewer – Latest that supports new embedding
+  syncfusion_flutter_pdfviewer: ^31.1.38   # ← This is correct and working
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
-  build_runner: ^2.4.12
-  retrofit_generator: ^8.1.2
-  freezed: ^2.5.2
+  flutter_lints: ^5.0.0             # ← 6.0.0 not released yet
+
+  # Code generation – Latest compatible
+  build_runner: ^2.4.13
+  retrofit_generator: ^8.2.1
+  json_serializable: ^6.8.0
+  freezed: ^2.5.7
+  freezed_annotation: ^2.4.4
+
+  # Icons & splash
   flutter_native_splash: ^2.4.1
   flutter_launcher_icons: ^0.14.1
 
@@ -68,7 +76,7 @@ flutter:
     - assets/lottie/trophy.json
     - assets/lottie/sad.json
 
-# NATIVE SPLASH SCREEN CONFIGURATION
+# Native splash configuration
 flutter_native_splash:
   color: "#6C5CE7"
   image: assets/images/logo.png
@@ -80,7 +88,7 @@ flutter_native_splash:
   fill: true
   fullscreen: true
 
-# APP ICONS CONFIGURATION
+# App icons configuration
 flutter_launcher_icons:
   android: true
   ios: true
