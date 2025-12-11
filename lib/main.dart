@@ -1,4 +1,4 @@
-// lib/main.dart — FINAL VERSION (google_sign_in v7+ COMPATIBLE)
+// lib/main.dart — FINAL VERSION (google_sign_in v7.2.0 COMPATIBLE)
 import 'dart:async';
 import 'package:animate_do/animate_do.dart';
 import 'package:confetti/confetti.dart';
@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_sign_in/google_sign_in.dart'; // v7+
+import 'package:google_sign_in/google_sign_in.dart'; // v7.2.0
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:lottie/lottie.dart';
 
@@ -33,7 +33,8 @@ import 'screens/courses/content_list_screen.dart';
 // ── PLACEHOLDER SCREENS ─────────────────────
 class LeaderboardScreen extends StatelessWidget {
   const LeaderboardScreen({super.key});
-  @override Widget build(BuildContext context) => Scaffold(
+  @override
+  Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('LEADERBOARD')),
     body: const Center(
         child: Text('LEADERBOARD COMING SOON',
@@ -47,7 +48,8 @@ class LeaderboardScreen extends StatelessWidget {
 // ── PROFILE SUB-SCREENS ─────────────────────
 class CertificatesScreen extends StatelessWidget {
   const CertificatesScreen({super.key});
-  @override Widget build(BuildContext context) => Scaffold(
+  @override
+  Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
         title: const Text("My Certificates"),
         leading: BackButton(onPressed: () => context.pop())),
@@ -57,7 +59,8 @@ class CertificatesScreen extends StatelessWidget {
 
 class QuizHistoryScreen extends StatelessWidget {
   const QuizHistoryScreen({super.key});
-  @override Widget build(BuildContext context) => Scaffold(
+  @override
+  Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
         title: const Text("Quiz History"),
         leading: BackButton(onPressed: () => context.pop())),
@@ -67,7 +70,8 @@ class QuizHistoryScreen extends StatelessWidget {
 
 class EditProfileScreen extends StatelessWidget {
   const EditProfileScreen({super.key});
-  @override Widget build(BuildContext context) => Scaffold(
+  @override
+  Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
         title: const Text("Edit Profile"),
         leading: BackButton(onPressed: () => context.pop())),
@@ -77,7 +81,8 @@ class EditProfileScreen extends StatelessWidget {
 
 class ProfileSettingsScreen extends StatelessWidget {
   const ProfileSettingsScreen({super.key});
-  @override Widget build(BuildContext context) => Scaffold(
+  @override
+  Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
         title: const Text("Settings"),
         leading: BackButton(onPressed: () => context.pop())),
@@ -91,8 +96,12 @@ void main() async {
   await Future.delayed(const Duration(milliseconds: 100));
   await Firebase.initializeApp();
 
-  // Initialize Google Sign-In v7+ (CRITICAL!)
-  await GoogleSignIn.instance.initialize();
+  // FIXED v7.2.0: Initialize the singleton instance (call once)
+  await GoogleSignIn.instance.initialize(
+    // Optional: Add these for web/iOS (from Google Cloud Console)
+    // clientId: 'your-web-client-id.googleusercontent.com',
+    // serverClientId: 'your-server-client-id.googleusercontent.com',
+  );
 
   runApp(const ProviderScope(child: PrepKingApp()));
 }
@@ -209,7 +218,8 @@ final routerProvider = Provider<GoRouter>((ref) {
 // ── APP & SCAFFOLD (UNCHANGED) ─────────────────────
 class PrepKingApp extends ConsumerWidget {
   const PrepKingApp({super.key});
-  @override Widget build(BuildContext context, WidgetRef ref) {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
       title: 'PrepKing',
       debugShowCheckedModeBanner: false,
@@ -226,7 +236,8 @@ class PrepKingApp extends ConsumerWidget {
 class MainScaffold extends ConsumerStatefulWidget {
   final Widget child;
   const MainScaffold({super.key, required this.child});
-  @override ConsumerState<MainScaffold> createState() => _MainScaffoldState();
+  @override
+  ConsumerState<MainScaffold> createState() => _MainScaffoldState();
 }
 
 class _MainScaffoldState extends ConsumerState<MainScaffold> {
@@ -247,7 +258,8 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
     return true;
   }
 
-  @override Widget build(BuildContext context) {
+  @override
+  Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(

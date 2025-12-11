@@ -13,7 +13,7 @@ dependencies:
 
   # Core & State Management
   flutter_riverpod: ^2.6.1
-  go_router: ^14.8.1               # ← 17.0.0 doesn't exist yet – use latest stable
+  go_router: ^14.8.1
 
   # Networking
   dio: ^5.7.0
@@ -22,7 +22,7 @@ dependencies:
 
   # UI & Animations
   lottie: ^3.1.2
-  animate_do: ^3.3.9                # ← 4.2.0 is not released yet
+  animate_do: ^3.3.9
   google_fonts: ^6.2.1
   flutter_svg: ^2.0.10+1
   cached_network_image: ^3.4.1
@@ -39,32 +39,32 @@ dependencies:
   vibration: ^3.1.4
   cupertino_icons: ^1.0.8
 
-  # Firebase – Latest stable & compatible
+  # Firebase (Latest stable & compatible)
   firebase_core: ^3.15.2
   firebase_auth: ^5.7.0
-  google_sign_in: ^7.2.0            # ← Correct latest version
+  google_sign_in: ^7.2.0        # ← Works perfectly (accessToken/idToken are direct properties)
 
-  # Content viewers
-  flutter_html: ^3.0.0
+  # Content Viewers
+  flutter_html: ^3.0.0-beta.1
   flutter_markdown: ^0.7.7+1
   youtube_player_flutter: ^9.1.3
 
-  # Syncfusion PDF Viewer – Latest that supports new embedding
-  syncfusion_flutter_pdfviewer: ^31.1.38   # ← This is correct and working
+  # Syncfusion PDF Viewer (Latest with new embedding support)
+  syncfusion_flutter_pdfviewer: ^31.1.38
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0             # ← 6.0.0 not released yet
+  flutter_lints: ^5.0.0
 
-  # Code generation – Latest compatible
+  # Code Generation — FULLY COMPATIBLE
   build_runner: ^2.4.13
-  retrofit_generator: ^8.2.1
+  retrofit_generator: ^10.2.0
   json_serializable: ^6.8.0
-  freezed: ^2.5.7
-  freezed_annotation: ^2.4.4
+  freezed: ^3.2.3                # ← Required for build ^3.0.0+ compatibility
+  freezed_annotation: ^3.1.0     # ← Matching version
 
-  # Icons & splash
+  # Icons & Splash
   flutter_native_splash: ^2.4.1
   flutter_launcher_icons: ^0.14.1
 
@@ -76,7 +76,7 @@ flutter:
     - assets/lottie/trophy.json
     - assets/lottie/sad.json
 
-# Native splash configuration
+# Native Splash Configuration
 flutter_native_splash:
   color: "#6C5CE7"
   image: assets/images/logo.png
@@ -88,7 +88,7 @@ flutter_native_splash:
   fill: true
   fullscreen: true
 
-# App icons configuration
+# App Icons Configuration
 flutter_launcher_icons:
   android: true
   ios: true

@@ -64,7 +64,6 @@ class TextContentScreen extends StatelessWidget {
           const Divider(height: 40),
 
           // Body Content
-          if (isHtml && body != null)
             if (isHtml && body != null)
               Html(
                 data: body,
@@ -80,7 +79,7 @@ class TextContentScreen extends StatelessWidget {
                   "img": Style(
                     width: Width(100, Unit.percent),
                     height: Height.auto(),
-                    margin: Margin.symmetric(vertical: 20),
+                    margin: Margins.symmetric(vertical: 20),
                     borderRadius: BorderRadius.all(Radius.circular(12)),
                     display: Display.block,
                     alignment: Alignment.center,
