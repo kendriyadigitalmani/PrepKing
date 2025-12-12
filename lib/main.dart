@@ -1,4 +1,4 @@
-// lib/main.dart — UPDATED VERSION WITH DIRECT CONTENT ROUTES
+// lib/main.dart — FIXED VERSION
 import 'dart:async';
 import 'package:animate_do/animate_do.dart';
 import 'package:confetti/confetti.dart';
@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_sign_in/google_sign_in.dart'; // v7.2.0
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:prepking/screens/courses/contents/pdf_content_screen.dart';
 import 'package:prepking/screens/courses/contents/quiz_content_screen.dart';
 import 'package:prepking/screens/courses/contents/text_content_screen.dart';
@@ -29,7 +29,7 @@ import 'screens/splash_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/login_screen.dart';
 
-// ── COURSES SCREENS (REAL ONES) ─────────────────────
+// ── COURSES SCREENS ─────────────────────
 import 'screens/courses/course_list_screen.dart';
 import 'screens/courses/course_detail_screen.dart';
 import 'screens/courses/content_list_screen.dart';
@@ -116,16 +116,12 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/splash',
     redirect: (context, state) {
-      // ✅ CRITICAL FIX: Do NOT redirect from /splash — let SplashScreen handle it
-      if (state.matchedLocation == '/splash') {
-        return null; // Allow splash screen to run
-      }
+      if (state.matchedLocation == '/splash') return null;
 
       final prefs = prefsFuture.value;
       final loggedIn = auth.value != null;
       final seenOnboarding = prefs?.getBool('seenOnboarding') ?? false;
 
-      // Protect non-splash routes
       if (!loggedIn) {
         if (!state.matchedLocation.startsWith('/login')) {
           return '/login';
@@ -155,13 +151,17 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: 'detail/:id',
-                builder: (context, state) => CourseDetailScreen(courseId: int.parse(state.pathParameters['id']!)),
+                builder: (context, state) {
+                  final idStr = state.pathParameters['id']!;
+                  final id = int.tryParse(idStr);
+                  if (id == null) {
+                    return Scaffold(body: Center(child: Text('Invalid course ID: $idStr')));
+                  }
+                  return CourseDetailScreen(courseId: id);
+                },
               ),
-              GoRoute(
-                path: 'content/:courseId',
-                builder: (context, state) => ContentListScreen(courseId: int.parse(state.pathParameters['courseId']!)),
-              ),
-              // === NEW DIRECT CONTENT ROUTES ===
+
+              // ✅ STATIC CONTENT TYPE ROUTES FIRST (MUST COME BEFORE :courseId)
               GoRoute(
                 path: 'content/text',
                 builder: (context, state) => TextContentScreen(content: state.extra as Map<String, dynamic>),
@@ -177,6 +177,21 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'content/quiz',
                 builder: (context, state) => QuizContentScreen(content: state.extra as Map<String, dynamic>),
+              ),
+
+              // ✅ DYNAMIC ROUTE LAST
+              GoRoute(
+                path: 'content/:courseId',
+                builder: (context, state) {
+                  final idStr = state.pathParameters['courseId']!;
+                  final courseId = int.tryParse(idStr);
+                  if (courseId == null) {
+                    return Scaffold(
+                      body: Center(child: Text('Invalid course ID: "$idStr"')),
+                    );
+                  }
+                  return ContentListScreen(courseId: courseId);
+                },
               ),
             ],
           ),
@@ -195,7 +210,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
 
-      // Quiz & Certificate routes
+      // Standalone Quiz & Certificate routes
       GoRoute(path: '/quizzes/detail', builder: (context, state) => QuizDetailScreen(quiz: state.extra as Map<String, dynamic>)),
       GoRoute(path: '/q/:slug', builder: (context, state) => Scaffold(body: Center(child: Text('Loading quiz: ${state.pathParameters['slug']}')))),
       GoRoute(path: '/quizzes/instant-player', builder: (context, state) {
