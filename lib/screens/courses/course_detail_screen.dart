@@ -49,16 +49,16 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
         ],
       ),
     );
+
     if (!(confirmed ?? false)) return;
 
     setState(() => _isEnrolling = true);
+
     try {
       final api = ref.read(apiServiceProvider);
-
-      // ✅ FIXED: Send userid & courseid as QUERY parameters, NOT in body
       await api.post(
         '/course/${widget.courseId}/enroll',
-        {}, // empty body (required by signature)
+        {},
         query: {
           'userid': user.id.toString(),
           'courseid': widget.courseId.toString(),
@@ -93,18 +93,43 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
     Share.share("$title\n\nJoin now: $url", subject: "Check out this course!");
   }
 
-  // FIXED: Extract real lesson count from PHP serialized content_ids
+  // Extract real lesson count from PHP serialized content_ids
   int _getLessonCount(Map<String, dynamic> course) {
     final String? serialized = course['content_ids'] as String?;
     if (serialized == null || serialized.isEmpty) return 0;
-
-    // PHP serialized array starts with a:{count}:{
     final regExp = RegExp(r'a:(\d+):');
     final match = regExp.firstMatch(serialized);
     if (match != null) {
       return int.tryParse(match.group(1)!) ?? 0;
     }
     return 0;
+  }
+
+  // NEW: Determine correct route based on content type
+  String _getContentRoute(Map<String, dynamic> content) {
+    final String rawType = (content['type'] as String?)?.toLowerCase().trim() ?? 'text';
+
+    switch (rawType) {
+      case 'video':
+      case 'youtube':
+      case 'vimeo':
+        return '/courses/content/video';
+      case 'quiz':
+      case 'mcq':
+      case 'assessment':
+        return '/courses/content/quiz';
+      case 'pdf':
+      case 'document':
+      case 'file':
+        return '/courses/content/pdf';
+      case 'text':
+      case 'article':
+      case 'lesson':
+      case 'html':
+      case 'markdown':
+      default:
+        return '/courses/content/text';
+    }
   }
 
   @override
@@ -169,8 +194,6 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
           final title = course['title'] ?? 'Course';
           final thumbnail = course['thumbnail'];
           final slug = course['slug'] ?? course['id'].toString();
-
-          // FIX APPLIED HERE
           final int lessonCount = _getLessonCount(course);
 
           return Stack(
@@ -276,21 +299,16 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
                                 ),
                               ),
                             ),
-
                           Text("COURSE DETAILS", style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 16),
-
-                          // FIXED LINE: Now shows correct number of lessons
                           _buildInfoCard(Icons.play_circle_outline, lessonCount > 0 ? "$lessonCount Lessons" : "N/A Lessons", "Total lessons"),
                           const SizedBox(height: 12),
                           _buildInfoCard(Icons.access_time, "${course['duration_minutes'] ?? '60'} mins", "Duration"),
                           const SizedBox(height: 12),
                           _buildInfoCard(Icons.card_giftcard, course['certificate_enabled'] == 1 ? "Certificate Included" : "No Certificate", ""),
-
                           const SizedBox(height: 32),
                           Text("LESSONS", style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 16),
-
                           contentsAsync.when(
                             loading: () => const Center(child: CircularProgressIndicator(color: Color(0xFF6C5CE7))),
                             error: (_, __) => const Text("Failed to load lessons", style: TextStyle(color: Colors.red)),
@@ -304,6 +322,7 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
                               itemBuilder: (context, i) {
                                 final c = contents[i];
                                 final isCompleted = ref.read(userWithProgressProvider).asData?.value?.completedContentIds.contains(c['id'].toString()) ?? false;
+
                                 return ListTile(
                                   enabled: isEnrolled,
                                   leading: CircleAvatar(
@@ -315,12 +334,16 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
                                   title: Text(c['title'] ?? "Lesson ${i + 1}", style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
                                   subtitle: c['duration_minutes'] != null ? Text("${c['duration_minutes']} mins") : null,
                                   trailing: isEnrolled ? const Icon(Icons.chevron_right) : const Icon(Icons.lock_outline),
-                                  onTap: isEnrolled ? () => context.push('/courses/content/${widget.courseId}/${c['id']}') : null,
+                                  onTap: isEnrolled
+                                      ? () {
+                                    final route = _getContentRoute(c);
+                                    context.push(route, extra: c);
+                                  }
+                                      : null,
                                 );
                               },
                             ),
                           ),
-
                           const SizedBox(height: 120),
                         ],
                       ),
@@ -328,8 +351,7 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
                   ),
                 ],
               ),
-
-              // Bottom Button
+              // Bottom Button (unchanged)
               Positioned(
                 bottom: 30,
                 left: 24,

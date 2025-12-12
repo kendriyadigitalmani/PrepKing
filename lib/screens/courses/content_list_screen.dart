@@ -1,5 +1,4 @@
-// lib/screens/content_list_screen.dart
-
+// lib/screens/courses/content_list_screen.dart
 import 'package:animate_do/animate_do.dart';
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
@@ -7,8 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
-
-import '../../providers/course_providers.dart';           // Contains courseContentsProvider
+import '../../providers/course_providers.dart'; // Contains courseContentsProvider
 import '../../providers/user_progress_merged_provider.dart'; // Contains userWithProgressProvider
 
 class ContentListScreen extends ConsumerStatefulWidget {
@@ -43,7 +41,6 @@ class _ContentListScreenState extends ConsumerState<ContentListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // FIXED: Use the correct provider
     final contentsAsync = ref.watch(courseContentsProvider(widget.courseId));
     final userProgressAsync = ref.watch(userWithProgressProvider);
 
@@ -68,7 +65,6 @@ class _ContentListScreenState extends ConsumerState<ContentListScreen> {
                   // Auto-celebrate when course is fully completed
                   final allCompleted = contents.isNotEmpty &&
                       contents.every((c) => completedIds.contains(c['id'].toString()));
-
                   if (allCompleted) {
                     WidgetsBinding.instance.addPostFrameCallback((_) => _showCompletionCelebration());
                   }
@@ -84,6 +80,36 @@ class _ContentListScreenState extends ConsumerState<ContentListScreen> {
                       // Lock next lesson until previous is completed
                       final prevContentId = i > 0 ? contents[i - 1]['id'].toString() : null;
                       final isLocked = i > 0 && prevContentId != null && !completedIds.contains(prevContentId);
+
+                      // Determine content type
+                      final String rawType = (content['type'] as String?)?.toLowerCase().trim() ?? 'text';
+                      String route;
+
+                      switch (rawType) {
+                        case 'video':
+                        case 'youtube':
+                        case 'vimeo':
+                          route = '/courses/content/video';
+                          break;
+                        case 'quiz':
+                        case 'mcq':
+                        case 'assessment':
+                          route = '/courses/content/quiz';
+                          break;
+                        case 'pdf':
+                        case 'document':
+                        case 'file':
+                          route = '/courses/content/pdf';
+                          break;
+                        case 'text':
+                        case 'article':
+                        case 'lesson':
+                        case 'html':
+                        case 'markdown':
+                        default:
+                          route = '/courses/content/text';
+                          break;
+                      }
 
                       return FadeInLeft(
                         delay: Duration(milliseconds: i * 100),
@@ -117,7 +143,7 @@ class _ContentListScreenState extends ConsumerState<ContentListScreen> {
                             enabled: !isLocked,
                             onTap: !isLocked
                                 ? () {
-                              context.push('/content/player/${content['id']}', extra: content);
+                              context.push(route, extra: content);
                             }
                                 : null,
                           ),
@@ -129,7 +155,6 @@ class _ContentListScreenState extends ConsumerState<ContentListScreen> {
               );
             },
           ),
-
           // Confetti Celebration
           Align(
             alignment: Alignment.topCenter,

@@ -1,4 +1,4 @@
-// lib/main.dart — FINAL VERSION (google_sign_in v7.2.0 COMPATIBLE)
+// lib/main.dart — UPDATED VERSION WITH DIRECT CONTENT ROUTES
 import 'dart:async';
 import 'package:animate_do/animate_do.dart';
 import 'package:confetti/confetti.dart';
@@ -9,6 +9,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_sign_in/google_sign_in.dart'; // v7.2.0
+import 'package:prepking/screens/courses/contents/pdf_content_screen.dart';
+import 'package:prepking/screens/courses/contents/quiz_content_screen.dart';
+import 'package:prepking/screens/courses/contents/text_content_screen.dart';
+import 'package:prepking/screens/courses/contents/video_content_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:lottie/lottie.dart';
 
@@ -23,7 +27,7 @@ import 'screens/quizzes/quiz_result_screen.dart';
 import 'screens/quizzes/quiz_review_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/onboarding_screen.dart';
-import 'screens/login_screen.dart'; // ← We moved LoginScreen to its own file (recommended)
+import 'screens/login_screen.dart';
 
 // ── COURSES SCREENS (REAL ONES) ─────────────────────
 import 'screens/courses/course_list_screen.dart';
@@ -95,14 +99,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Future.delayed(const Duration(milliseconds: 100));
   await Firebase.initializeApp();
-
-  // FIXED v7.2.0: Initialize the singleton instance (call once)
-  await GoogleSignIn.instance.initialize(
-    // Optional: Add these for web/iOS (from Google Cloud Console)
-    // clientId: 'your-web-client-id.googleusercontent.com',
-    // serverClientId: 'your-server-client-id.googleusercontent.com',
-  );
-
+  await GoogleSignIn.instance.initialize();
   runApp(const ProviderScope(child: PrepKingApp()));
 }
 
@@ -111,7 +108,7 @@ final authProvider = Provider((ref) => FirebaseAuth.instance);
 final authStateProvider = StreamProvider<User?>((ref) => ref.watch(authProvider).authStateChanges());
 final sharedPrefsProvider = FutureProvider<SharedPreferences>((ref) => SharedPreferences.getInstance());
 
-// ── ROUTER (UNCHANGED – STILL PERFECT) ─────────────────────
+// ── ROUTER ─────────────────────
 final routerProvider = Provider<GoRouter>((ref) {
   final auth = ref.watch(authStateProvider);
   final prefsFuture = ref.watch(sharedPrefsProvider);
@@ -119,19 +116,28 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/splash',
     redirect: (context, state) {
+      // ✅ CRITICAL FIX: Do NOT redirect from /splash — let SplashScreen handle it
+      if (state.matchedLocation == '/splash') {
+        return null; // Allow splash screen to run
+      }
+
       final prefs = prefsFuture.value;
       final loggedIn = auth.value != null;
       final seenOnboarding = prefs?.getBool('seenOnboarding') ?? false;
-      final atSplash = state.matchedLocation == '/splash';
 
-      if (atSplash) {
-        if (loggedIn) return seenOnboarding ? '/home' : '/onboarding';
-        return '/login';
+      // Protect non-splash routes
+      if (!loggedIn) {
+        if (!state.matchedLocation.startsWith('/login')) {
+          return '/login';
+        }
+      } else {
+        if (state.matchedLocation == '/login') {
+          return seenOnboarding ? '/home' : '/onboarding';
+        }
+        if (!seenOnboarding && state.matchedLocation != '/onboarding') {
+          return '/onboarding';
+        }
       }
-      if (!loggedIn && !state.matchedLocation.startsWith('/login') && !atSplash) {
-        return '/login';
-      }
-      if (loggedIn && state.matchedLocation == '/login') return '/home';
       return null;
     },
     routes: [
@@ -155,6 +161,23 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'content/:courseId',
                 builder: (context, state) => ContentListScreen(courseId: int.parse(state.pathParameters['courseId']!)),
               ),
+              // === NEW DIRECT CONTENT ROUTES ===
+              GoRoute(
+                path: 'content/text',
+                builder: (context, state) => TextContentScreen(content: state.extra as Map<String, dynamic>),
+              ),
+              GoRoute(
+                path: 'content/video',
+                builder: (context, state) => VideoContentScreen(content: state.extra as Map<String, dynamic>),
+              ),
+              GoRoute(
+                path: 'content/pdf',
+                builder: (context, state) => PdfContentScreen(content: state.extra as Map<String, dynamic>),
+              ),
+              GoRoute(
+                path: 'content/quiz',
+                builder: (context, state) => QuizContentScreen(content: state.extra as Map<String, dynamic>),
+              ),
             ],
           ),
           GoRoute(path: '/quizzes', pageBuilder: (_, __) => const NoTransitionPage(child: QuizzesScreen())),
@@ -172,7 +195,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
 
-      // Quiz & Certificate routes (unchanged — perfect)
+      // Quiz & Certificate routes
       GoRoute(path: '/quizzes/detail', builder: (context, state) => QuizDetailScreen(quiz: state.extra as Map<String, dynamic>)),
       GoRoute(path: '/q/:slug', builder: (context, state) => Scaffold(body: Center(child: Text('Loading quiz: ${state.pathParameters['slug']}')))),
       GoRoute(path: '/quizzes/instant-player', builder: (context, state) {
@@ -215,7 +238,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   );
 });
 
-// ── APP & SCAFFOLD (UNCHANGED) ─────────────────────
+// ── APP & SCAFFOLD ─────────────────────
 class PrepKingApp extends ConsumerWidget {
   const PrepKingApp({super.key});
   @override

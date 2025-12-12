@@ -1,13 +1,16 @@
-// lib/screens/splash_screen.dart  ← KEEPING EVERYTHING INTACT, JUST FIXING ERRORS
-import 'dart:async';  // Add this import at the top
+// lib/screens/splash_screen.dart
+import 'dart:async';
 import 'package:animate_do/animate_do.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
+
   @override
   State<SplashScreen> createState() => _SplashScreenState();
 }
@@ -20,9 +23,31 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     super.initState();
     _lottieController = AnimationController(vsync: this);
 
-    // Navigate after 3.5 seconds (even if Lottie fails)
-    Future.delayed(const Duration(milliseconds: 3500), () {
-      if (mounted) context.go('/home');
+    // Delayed navigation with full auth & onboarding logic
+    Future.delayed(const Duration(milliseconds: 3500), () async {
+      if (!mounted) return;
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final user = FirebaseAuth.instance.currentUser;
+        final seenOnboarding = prefs.getBool('seenOnboarding') ?? false;
+
+        String targetRoute;
+        if (user != null) {
+          targetRoute = seenOnboarding ? '/home' : '/onboarding';
+        } else {
+          targetRoute = '/login';
+        }
+
+        if (mounted) {
+          context.go(targetRoute);
+        }
+      } catch (e) {
+        // Fallback: go to login if something fails
+        if (mounted) {
+          context.go('/login');
+        }
+      }
     });
   }
 
@@ -40,31 +65,38 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // This will show INSTANTLY even if Lottie fails
+            // Lottie with instant fallback
             Lottie.asset(
               'assets/lottie/splash.json',
               controller: _lottieController,
               onLoaded: (composition) {
-                _lottieController
-                  ..duration = composition.duration
-                  ..forward()
-                  ..repeat();
+                if (mounted) {
+                  _lottieController
+                    ..duration = composition.duration
+                    ..forward()
+                    ..repeat();
+                }
               },
               width: 280,
               fit: BoxFit.contain,
               repeat: true,
-              // ← CRITICAL: Show beautiful fallback immediately
+              // Fallback shown immediately if asset fails to load
               errorBuilder: (context, error, stackTrace) {
                 return Column(
                   children: [
-                    Image.asset('assets/images/logo.png', width: 180, height: 180),
+                    Image.asset(
+                      'assets/images/logo.png',
+                      width: 180,
+                      height: 180,
+                      errorBuilder: (context, error, stackTrace) =>
+                      const Icon(Icons.school, size: 100, color: Colors.white),
+                    ),
                     const SizedBox(height: 20),
                     const CircularProgressIndicator(color: Colors.white),
                   ],
                 );
               },
             ),
-
             const SizedBox(height: 50),
             FadeInDown(
               duration: const Duration(milliseconds: 1000),
@@ -92,7 +124,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
               ),
             ),
             const SizedBox(height: 120),
-            const _DotsLoader(), // Your beautiful bouncing dots
+            const _DotsLoader(),
           ],
         ),
       ),
@@ -100,7 +132,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   }
 }
 
-// Keep your beautiful dots loader
+// Keep your beautiful bouncing dots loader (unchanged)
 class _DotsLoader extends StatefulWidget {
   const _DotsLoader();
   @override

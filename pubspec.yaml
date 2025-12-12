@@ -75,6 +75,8 @@ flutter:
     - assets/lottie/
     - assets/lottie/trophy.json
     - assets/lottie/sad.json
+    - assets/lottie/splash.json
+
 
 # Native Splash Configuration
 flutter_native_splash:
