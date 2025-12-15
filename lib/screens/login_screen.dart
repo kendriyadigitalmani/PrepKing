@@ -1,4 +1,5 @@
 // lib/screens/login_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,14 +8,19 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class LoginScreen extends StatefulWidget {
+// Add these imports
+import '../core/utils/user_preferences.dart';
+import '../core/services/api_service.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'; // if not already imported
+
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _isSigningIn = false;
 
   Future<void> _googleSignIn() async {
@@ -22,9 +28,8 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isSigningIn = true);
 
     try {
-      // 1. Trigger Google Sign-In (with optional scopes for future accessToken if needed)
       final googleUser = await GoogleSignIn.instance.authenticate(
-        scopeHint: ['email', 'profile'], // Add scopes if you need accessToken later
+        scopeHint: ['email', 'profile'],
       );
 
       if (googleUser == null) {
@@ -32,10 +37,7 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // 2. Get authentication object
       final googleAuth = await googleUser.authentication;
-
-      // 3. FIXED: Use only idToken (accessToken not available in v7.2.0 for auth)
       final String? idToken = googleAuth.idToken;
 
       if (idToken == null) {
@@ -48,17 +50,54 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // 4. Firebase sign-in (only idToken needed)
-      final credential = GoogleAuthProvider.credential(
-        idToken: idToken,
-        // accessToken: null, // Optional; omit for basic Firebase auth
-      );
+      final credential = GoogleAuthProvider.credential(idToken: idToken);
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      final firebaseId = userCredential.user?.uid;
 
-      await FirebaseAuth.instance.signInWithCredential(credential);
+      if (firebaseId == null) {
+        throw Exception('Firebase UID is missing after sign-in');
+      }
 
-      // 5. Save flag & navigate
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('seenOnboarding', true);
+      // ✅ STEP 1: Fetch user from backend by firebaseId
+      final apiService = ref.read(apiServiceProvider);
+      final response = await apiService.get('/user', query: {'firebaseid': firebaseId});
+
+      final userData = response['data'] as Map<String, dynamic>?;
+
+      final prefs = UserPreferences();
+
+      if (userData != null) {
+        // ✅ STEP 2: User exists → save full data
+        await prefs.saveUserData(
+          userId: userData['id'] as int,
+          firebaseId: userData['firebase_id'] as String,
+          name: userData['name'] as String,
+          email: userData['email'] as String,
+          isFirstTime: false,
+          isGuest: false,
+        );
+      } else {
+        // ✅ STEP 3: New user → create on backend and save
+        final newUserResponse = await apiService.post('/user', {
+          'firebase_id': firebaseId,
+          'name': googleUser.displayName ?? 'User',
+          'email': googleUser.email,
+          'role': 'student', // or whatever default
+        });
+
+        final createdUser = newUserResponse['data'] as Map<String, dynamic>;
+        await prefs.saveUserData(
+          userId: createdUser['id'] as int,
+          firebaseId: createdUser['firebase_id'] as String,
+          name: createdUser['name'] as String,
+          email: createdUser['email'] as String,
+          isFirstTime: true,
+          isGuest: false,
+        );
+      }
+
+      // Mark onboarding as seen (optional if already handled in saveUserData)
+      await prefs.getUserData(); // just to confirm
 
       if (mounted) context.go('/home');
     } catch (e) {
@@ -75,9 +114,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _guestLogin() async {
     try {
-      await FirebaseAuth.instance.signInAnonymously();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('seenOnboarding', true);
+      final userCredential = await FirebaseAuth.instance.signInAnonymously();
+      final firebaseId = userCredential.user?.uid;
+
+      if (firebaseId == null) throw Exception('Guest login failed: no Firebase UID');
+
+      // Guest users don’t go to backend (or optionally create later)
+      final prefs = UserPreferences();
+      await prefs.saveGuestData(firebaseId: firebaseId);
+
       if (mounted) context.go('/home');
     } catch (e) {
       if (mounted) {

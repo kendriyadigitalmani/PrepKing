@@ -1,4 +1,5 @@
-// lib/screens/home/home_screen.dart → REAL DATA FROM https://quizard.in/api_002.php
+// lib/screens/home/home_screen.dart
+
 import 'package:animate_do/animate_do.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -6,11 +7,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
-import '../../providers/user_provider.dart'; // ← YOUR PROVIDER
+import '../../providers/user_provider.dart';
+// ✅ Add UserPreferences import
+import '../../core/utils/user_preferences.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
-  @override ConsumerState<HomeScreen> createState() => _HomeScreenState();
+
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStateMixin {
@@ -50,28 +55,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // HEADER — REAL NAME FROM YOUR SERVER + GOOGLE PHOTO
+                  // HEADER — Use provider data first, fallback to UserPreferences if needed
                   Row(
                     children: [
                       Expanded(
                         child: userAsync.when(
-                          data: (user) => user != null
-                              ? Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text("Hello,", style: GoogleFonts.poppins(fontSize: 20, color: Colors.white70)),
-                              Text(user.name, style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
-                            ],
-                          )
-                              : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text("Hello,", style: GoogleFonts.poppins(fontSize: 20, color: Colors.white70)),
-                              Text("Warrior", style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
-                            ],
-                          ),
-                          loading: () => const Text("Loading...", style: TextStyle(color: Colors.white70)),
-                          error: (_, __) => const Text("Warrior", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
+                          data: (user) {
+                            if (user != null) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text("Hello,", style: GoogleFonts.poppins(fontSize: 20, color: Colors.white70)),
+                                  Text(user.name, style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
+                                ],
+                              );
+                            } else {
+                              // Provider returned null → try local cache
+                              return _buildFallbackHeader();
+                            }
+                          },
+                          loading: () => _buildFallbackHeader(), // Show cached while loading
+                          error: (_, __) => _buildFallbackHeader(), // Show cached on error
                         ),
                       ),
                       CircleAvatar(
@@ -86,29 +90,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 30),
-
-                  // REAL STREAK + COINS FROM YOUR SERVER
+                  // Streak & Coins — same logic: provider first, fallback to local
                   userAsync.when(
-                    data: (user) => user != null
-                        ? Row(
-                      children: [
-                        Expanded(child: _streakCard(user.streak)),
-                        const SizedBox(width: 16),
-                        Expanded(child: _coinsCard(user.coins)),
-                      ],
-                    )
-                        : Row(children: [_streakCard(7), const SizedBox(width: 16), _coinsCard(1250)]),
-                    loading: () => const Center(child: CircularProgressIndicator(color: Colors.white)),
-                    error: (_, __) => Row(children: [_streakCard(7), const SizedBox(width: 16), _coinsCard(1250)]),
+                    data: (user) {
+                      if (user != null) {
+                        return Row(
+                          children: [
+                            Expanded(child: _streakCard(user.streak)),
+                            const SizedBox(width: 16),
+                            Expanded(child: _coinsCard(user.coins)),
+                          ],
+                        );
+                      } else {
+                        return _buildFallbackStats();
+                      }
+                    },
+                    loading: () => _buildFallbackStats(),
+                    error: (_, __) => _buildFallbackStats(),
                   ),
-
                   const SizedBox(height: 30),
-
-                  // Continue Learning (we'll make this real in 2 mins)
                   _continueCard("Algebra Mastery", 0.75),
-
                   const SizedBox(height: 20),
                   _dailyChallengeCard(),
                   const SizedBox(height: 20),
@@ -122,6 +124,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
     );
   }
 
+  // ✅ Fallback using UserPreferences
+  Widget _buildFallbackHeader() {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: UserPreferences().getUserData(),
+      builder: (context, snapshot) {
+        final name = snapshot.data?['name'] ?? 'Warrior';
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Hello,", style: GoogleFonts.poppins(fontSize: 20, color: Colors.white70)),
+            Text(name, style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildFallbackStats() {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: UserPreferences().getUserData(),
+      builder: (context, snapshot) {
+        final data = snapshot.data;
+        final streak = data?['streak'] as int? ?? 7;
+        final coins = data?['coins'] as int? ?? 1250;
+        return Row(
+          children: [
+            Expanded(child: _streakCard(streak)),
+            const SizedBox(width: 16),
+            Expanded(child: _coinsCard(coins)),
+          ],
+        );
+      },
+    );
+  }
+
+  // ... rest of your widgets unchanged (_streakCard, _coinsCard, etc.)
   Widget _streakCard(int streak) => FadeInLeft(
     child: Container(
       padding: const EdgeInsets.all(20),
@@ -161,6 +199,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
     ),
   );
 
+  // ... _continueCard, _dailyChallengeCard, _quickActions — unchanged
   Widget _continueCard(String title, double progress) => FadeInUp(
     child: Container(
       width: double.infinity,
@@ -220,10 +259,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text("Daily Challenge", style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
-                Text("5 Quick Questions", style: GoogleFonts.poppins(fontSize: 16, color: Colors.white)),
+                Text("Current Affairs Quiz", style: GoogleFonts.poppins(fontSize: 16, color: Colors.white)),
                 const SizedBox(height: 12),
                 ElevatedButton(
-                  onPressed: () => context.push('/quiz/daily'),
+                  onPressed: () => context.push('/quizzes/daily'),
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.purple),
                   child: const Text("Start Now"),
                 ),

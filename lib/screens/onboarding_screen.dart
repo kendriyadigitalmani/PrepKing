@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+// ✅ Import UserPreferences instead of SharedPreferences
+import '../core/utils/user_preferences.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -48,7 +50,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // PageView with Lottie + Title + Description
             Expanded(
               child: PageView.builder(
                 controller: _pageController,
@@ -60,14 +61,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 },
               ),
             ),
-
-            // Dots Indicator + Next Button
             Padding(
               padding: const EdgeInsets.all(30.0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Page Dots
                   Row(
                     children: List.generate(
                       onboardingData.length,
@@ -83,8 +81,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       ),
                     ),
                   ),
-
-                  // Next / Done Button
                   FloatingActionButton(
                     backgroundColor: Colors.white,
                     elevation: 6,
@@ -97,10 +93,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                     onPressed: () async {
                       if (_currentPage == onboardingData.length - 1) {
-                        // Mark onboarding as seen
-                        final prefs = await SharedPreferences.getInstance();
-                        await prefs.setBool('seenOnboarding', true);
-                        if (mounted) context.go('/home');
+                        // ✅ Use UserPreferences to mark onboarding as seen
+                        final prefs = UserPreferences();
+                        await prefs.saveOnboardingSeen(); // <-- new helper method
+
+                        if (mounted) context.go('/login'); // or '/home' if you auto-login
                       } else {
                         _pageController.nextPage(
                           duration: const Duration(milliseconds: 400),
@@ -119,7 +116,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 }
 
-// Individual Onboarding Page (Lottie + Title + Text)
 class OnboardingPage extends StatelessWidget {
   final Map<String, String> data;
 
@@ -132,7 +128,6 @@ class OnboardingPage extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Lottie Animation
           Lottie.asset(
             'assets/lottie/${data["lottie"]}',
             width: 320,
@@ -140,8 +135,6 @@ class OnboardingPage extends StatelessWidget {
             repeat: true,
           ),
           const SizedBox(height: 60),
-
-          // Title
           Text(
             data["title"]!,
             style: GoogleFonts.poppins(
@@ -153,8 +146,6 @@ class OnboardingPage extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 20),
-
-          // Description
           Text(
             data["text"]!,
             textAlign: TextAlign.center,

@@ -25,7 +25,7 @@ class ProfileScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined, color: Colors.grey),
-            onPressed: () => context.push('/profile/settings'),
+            onPressed: null, // Explicitly disabled (required parameter)
           ),
         ],
       ),
@@ -52,7 +52,10 @@ class ProfileScreen extends ConsumerWidget {
           data: (user) {
             if (user == null) {
               return Center(
-                child: Text("No user data found", style: GoogleFonts.poppins(fontSize: 18)),
+                child: Text(
+                  "No user data found",
+                  style: GoogleFonts.poppins(fontSize: 18),
+                ),
               );
             }
 
@@ -99,22 +102,19 @@ class ProfileScreen extends ConsumerWidget {
                         ),
                       ],
                       const SizedBox(height: 32),
-
                       // ─── Stats Row ───
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
                           _buildStat("${user.coins}", "Coins", 'assets/lottie/coin.json'),
                           _buildStat("${user.streak}", "Day Streak", 'assets/lottie/fire.json'),
-                          _buildStat("0", "Certificates", 'assets/lottie/trophy.json'), // Will be real soon
+                          _buildStat("0", "Certificates", 'assets/lottie/trophy.json'),
                         ],
                       ),
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 20),
-
                 // ─── Menu Section ───
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -134,58 +134,56 @@ class ProfileScreen extends ConsumerWidget {
                       ProfileMenuTile(
                         icon: Icons.person_outline,
                         title: "Edit Profile",
-                        onTap: () => context.push('/profile/edit'),
+                        onTap: () {}, // Disabled
                       ),
                       const Divider(height: 1),
                       ProfileMenuTile(
                         icon: Icons.card_membership_outlined,
                         title: "My Certificates",
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => context.push('/profile/certificates'),
+                        onTap: () {},
                       ),
                       const Divider(height: 1),
                       ProfileMenuTile(
                         icon: Icons.history,
                         title: "Quiz History",
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => context.push('/profile/history'),
+                        onTap: () {},
                       ),
                       const Divider(height: 1),
                       ProfileMenuTile(
                         icon: Icons.emoji_events_outlined,
                         title: "Leaderboard Rank",
                         trailing: Text(
-                          "#--", // Will fetch real rank later
+                          "#--",
                           style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(0xFF6C5CE7)),
                         ),
-                        onTap: () => context.go('/leaderboard'),
+                        onTap: () {},
                       ),
                       const Divider(height: 1),
                       ProfileMenuTile(
                         icon: Icons.wallet,
                         title: "Coin Store",
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => context.push('/coins/store'),
+                        onTap: () {},
                       ),
                       const Divider(height: 1),
                       ProfileMenuTile(
                         icon: Icons.help_outline,
                         title: "Help & Support",
-                        onTap: () => context.push('/support'),
+                        onTap: () {},
                       ),
                       const Divider(height: 1),
                       ProfileMenuTile(
                         icon: Icons.info_outline,
                         title: "About PrepKing",
-                        onTap: () => context.push('/about'),
+                        onTap: () {},
                       ),
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 40),
-
-                // ─── Logout Button ───
+                // ─── Logout Button (FULLY CLICKABLE) ───
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 40),
                   child: OutlinedButton(
@@ -241,14 +239,20 @@ class ProfileScreen extends ConsumerWidget {
         content: Text("Are you sure you want to logout?", style: GoogleFonts.poppins()),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.of(context).pop(), // Safe pop only closes dialog
             child: Text("Cancel", style: GoogleFonts.poppins(color: Colors.grey[700])),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            onPressed: () {
-              FirebaseAuth.instance.signOut();
-              context.go('/login');
+            onPressed: () async {
+              // DO NOT pop the dialog here manually if it's the last screen
+              // Just sign out and redirect
+              await FirebaseAuth.instance.signOut();
+
+              // This replaces the entire stack with /login safely
+              if (context.mounted) {
+                context.go('/login');
+              }
             },
             child: Text("Logout", style: GoogleFonts.poppins(color: Colors.white)),
           ),

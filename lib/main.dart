@@ -1,4 +1,4 @@
-// lib/main.dart — FIXED VERSION
+// lib/main.dart — UPDATED WITH DAILY QUIZZES ROUTE
 import 'dart:async';
 import 'package:animate_do/animate_do.dart';
 import 'package:confetti/confetti.dart';
@@ -20,6 +20,7 @@ import 'package:lottie/lottie.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/quizzes/quizzes_screen.dart';
+import 'screens/quizzes/daily_quizzes_screen.dart'; // ← NEW IMPORT
 import 'screens/quizzes/quiz_detail_screen.dart';
 import 'screens/quizzes/standard_quiz_player_screen.dart';
 import 'screens/quizzes/instant_quiz_player_screen.dart';
@@ -28,6 +29,7 @@ import 'screens/quizzes/quiz_review_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/leaderboard/leaderboard_screen.dart';
 
 // ── COURSES SCREENS ─────────────────────
 import 'screens/courses/course_list_screen.dart';
@@ -35,21 +37,6 @@ import 'screens/courses/course_detail_screen.dart';
 import 'screens/courses/content_list_screen.dart';
 
 // ── PLACEHOLDER SCREENS ─────────────────────
-class LeaderboardScreen extends StatelessWidget {
-  const LeaderboardScreen({super.key});
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('LEADERBOARD')),
-    body: const Center(
-        child: Text('LEADERBOARD COMING SOON',
-            style: TextStyle(
-                fontSize: 28,
-                color: Color(0xFF6C5CE7),
-                fontWeight: FontWeight.bold))),
-  );
-}
-
-// ── PROFILE SUB-SCREENS ─────────────────────
 class CertificatesScreen extends StatelessWidget {
   const CertificatesScreen({super.key});
   @override
@@ -112,16 +99,13 @@ final sharedPrefsProvider = FutureProvider<SharedPreferences>((ref) => SharedPre
 final routerProvider = Provider<GoRouter>((ref) {
   final auth = ref.watch(authStateProvider);
   final prefsFuture = ref.watch(sharedPrefsProvider);
-
   return GoRouter(
     initialLocation: '/splash',
     redirect: (context, state) {
       if (state.matchedLocation == '/splash') return null;
-
       final prefs = prefsFuture.value;
       final loggedIn = auth.value != null;
       final seenOnboarding = prefs?.getBool('seenOnboarding') ?? false;
-
       if (!loggedIn) {
         if (!state.matchedLocation.startsWith('/login')) {
           return '/login';
@@ -140,7 +124,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
-
       ShellRoute(
         builder: (context, state, child) => MainScaffold(child: child),
         routes: [
@@ -160,8 +143,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                   return CourseDetailScreen(courseId: id);
                 },
               ),
-
-              // ✅ STATIC CONTENT TYPE ROUTES FIRST (MUST COME BEFORE :courseId)
               GoRoute(
                 path: 'content/text',
                 builder: (context, state) => TextContentScreen(content: state.extra as Map<String, dynamic>),
@@ -178,8 +159,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'content/quiz',
                 builder: (context, state) => QuizContentScreen(content: state.extra as Map<String, dynamic>),
               ),
-
-              // ✅ DYNAMIC ROUTE LAST
               GoRoute(
                 path: 'content/:courseId',
                 builder: (context, state) {
@@ -196,6 +175,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             ],
           ),
           GoRoute(path: '/quizzes', pageBuilder: (_, __) => const NoTransitionPage(child: QuizzesScreen())),
+          // ← NEW: DAILY QUIZZES ROUTE
+          GoRoute(
+            path: '/quizzes/daily',
+            pageBuilder: (_, __) => const NoTransitionPage(child: DailyQuizzesScreen()),
+          ),
           GoRoute(path: '/leaderboard', pageBuilder: (_, __) => const NoTransitionPage(child: LeaderboardScreen())),
           GoRoute(
             path: '/profile',
@@ -209,8 +193,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
-
-      // Standalone Quiz & Certificate routes
+      // Standalone routes
       GoRoute(path: '/quizzes/detail', builder: (context, state) => QuizDetailScreen(quiz: state.extra as Map<String, dynamic>)),
       GoRoute(path: '/q/:slug', builder: (context, state) => Scaffold(body: Center(child: Text('Loading quiz: ${state.pathParameters['slug']}')))),
       GoRoute(path: '/quizzes/instant-player', builder: (context, state) {
@@ -281,6 +264,7 @@ class MainScaffold extends ConsumerStatefulWidget {
 class _MainScaffoldState extends ConsumerState<MainScaffold> {
   int _currentIndex = 0;
   final List<String> _locations = ['/home', '/courses', '/quizzes', '/leaderboard', '/profile'];
+
   DateTime? _lastBackPressTime;
 
   Future<bool> _onWillPop() async {

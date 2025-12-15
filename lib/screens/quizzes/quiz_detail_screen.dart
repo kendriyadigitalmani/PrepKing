@@ -1,4 +1,4 @@
-// lib/screens/quizzes/quiz_detail_screen.dart
+// lib/screens/quizzes/quiz_detail_screen.dart — UPDATED TO TREAT DAILY QUIZZES LIKE INSTANT QUIZZES
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,12 +15,10 @@ int safeIntParse(dynamic value, {String? context, required int defaultValue}) {
     developer.log('❌ NULL VALUE ERROR | Context: $context | Using default: $defaultValue');
     return defaultValue;
   }
-
   if (value is int) {
     developer.log('✅ INT VALUE OK | Context: $context | Value: $value');
     return value;
   }
-
   if (value is String) {
     final parsed = int.tryParse(value);
     if (parsed != null) {
@@ -31,7 +29,6 @@ int safeIntParse(dynamic value, {String? context, required int defaultValue}) {
       return defaultValue;
     }
   }
-
   developer.log('❌ TYPE MISMATCH ERROR | Context: $context | Type: ${value.runtimeType} | Value: $value → Using default: $defaultValue');
   return defaultValue;
 }
@@ -56,15 +53,21 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
     );
   }
 
+  /// ✅ UPDATED: Treat type=="quiz_daily" exactly like isInstantQuiz==1
   bool _isInstantQuiz(Map<String, dynamic> quiz) {
+    // First check explicit instant flags
     final instantValue = quiz['isInstantQuiz'] ?? quiz['instantquiz'];
-    if (instantValue == null) return false;
-    if (instantValue is bool) return instantValue;
-    if (instantValue is int) return instantValue == 1;
-    if (instantValue is String) {
-      return instantValue == "1" || instantValue.toLowerCase() == "true";
+    if (instantValue != null) {
+      if (instantValue is bool) return instantValue;
+      if (instantValue is int) return instantValue == 1;
+      if (instantValue is String) {
+        return instantValue == "1" || instantValue.toLowerCase() == "true";
+      }
     }
-    return false;
+
+    // NEW: Daily quizzes (from type=quiz_daily endpoint) behave like instant quizzes
+    final type = quiz['type']?.toString().trim();
+    return type == "quiz_daily";
   }
 
   /// ✅ SAFE ATTEMPT NUMBER EXTRACTION
@@ -92,24 +95,20 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
     try {
       developer.log('🚀 Starting quiz ID: $_quizId');
 
-      // ✅ VALIDATE QUIZ ID
       if (_quizId == 0) {
         throw Exception("❌ INVALID QUIZ ID: ${widget.quiz['id']} (Type: ${widget.quiz['id'].runtimeType})");
       }
 
       final userAsync = ref.read(currentUserProvider);
       final user = userAsync.asData?.value;
-
       if (user == null || user.id == 0) {
         throw Exception("Profile loading... Try again.");
       }
 
       final api = ref.read(apiServiceProvider);
 
-      // ✅ STEP 1: Check for existing in-progress attempt
       Map<String, dynamic>? latestAttempt;
 
-      // Try provider first
       try {
         final latestAttemptAsync = ref.read(latestQuizAttemptProvider(_quizId));
         if (latestAttemptAsync.hasValue && latestAttemptAsync.value != null) {
@@ -120,7 +119,6 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
         developer.log('⚠️ Provider error, trying manual fetch: $e');
       }
 
-      // Fallback: Manual API call
       if (latestAttempt == null) {
         try {
           developer.log('🔍 Manual attempt fetch for quiz $_quizId');
@@ -128,17 +126,13 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
             'course_quiz_id': _quizId.toString(),
             'user_id': user.id.toString(),
           });
-
           if (attemptsResponse['success'] == true) {
             final attemptsData = attemptsResponse['data'] ?? [];
             final attempts = List<Map<String, dynamic>>.from(attemptsData);
-
             if (attempts.isNotEmpty) {
-              // ✅ SAFE MAX ID CALCULATION
               latestAttempt = attempts.reduce((a, b) {
                 final idA = _safeGetAttemptId(a);
                 final idB = _safeGetAttemptId(b);
-                developer.log('Comparing attempts: ${a['id']} vs ${b['id']}');
                 return idA > idB ? a : b;
               });
               developer.log('✅ Manual latest attempt found: ${_safeGetAttemptId(latestAttempt!)}');
@@ -152,35 +146,28 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
       int attemptId;
       int nextAttemptNumber;
 
-      // ✅ STEP 2: DECIDE RESUME OR NEW ATTEMPT
       if (latestAttempt != null) {
         final latestStatus = latestAttempt['status']?.toString() ?? '';
         if (latestStatus == 'in_progress') {
-          // RESUME EXISTING ATTEMPT
           attemptId = _safeGetAttemptId(latestAttempt);
           nextAttemptNumber = _safeGetAttemptNumber(latestAttempt);
-
           developer.log('🔄 RESUMING existing attempt: ID $attemptId (Attempt #$nextAttemptNumber)');
-
           if (mounted) {
             _showResumeSnackBar(nextAttemptNumber);
           }
         } else {
           developer.log('ℹ️ Latest attempt completed (${latestStatus}), creating new one');
-          latestAttempt = null; // Continue to create new
+          latestAttempt = null;
         }
       }
 
-      // ✅ STEP 3: CREATE NEW ATTEMPT
       if (latestAttempt == null) {
         final List<Map<String, dynamic>> existingAttempts = [];
-
         try {
           final attemptsResponse = await api.get('/quiz_attempt', query: {
             'course_quiz_id': _quizId.toString(),
             'user_id': user.id.toString(),
           });
-
           if (attemptsResponse['success'] == true) {
             final attemptsData = attemptsResponse['data'] ?? [];
             existingAttempts.addAll(List<Map<String, dynamic>>.from(attemptsData));
@@ -190,7 +177,6 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
           developer.log("⚠️ Could not fetch existing attempts: $e");
         }
 
-        // ✅ SAFE NEXT ATTEMPT NUMBER CALCULATION
         nextAttemptNumber = 1;
         if (existingAttempts.isNotEmpty) {
           try {
@@ -201,10 +187,9 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                 validAttemptNumbers.add(attemptNum);
               }
             }
-
             if (validAttemptNumbers.isNotEmpty) {
               nextAttemptNumber = validAttemptNumbers.reduce((a, b) => a > b ? a : b) + 1;
-              developer.log('📈 Next attempt calculated: $nextAttemptNumber (Max was: ${validAttemptNumbers.reduce((a, b) => a > b ? a : b)})');
+              developer.log('📈 Next attempt calculated: $nextAttemptNumber');
             }
           } catch (e) {
             developer.log('❌ Error calculating next attempt number: $e');
@@ -213,7 +198,6 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
         }
 
         developer.log("📊 Creating NEW attempt #$nextAttemptNumber for quiz $_quizId");
-
         final response = await api.post('/quiz_attempt', {
           'course_quiz_id': _quizId.toString(),
           'user_id': user.id.toString(),
@@ -234,7 +218,6 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
           throw Exception('Failed to start quiz: ${response['message'] ?? 'Unknown error'}');
         }
 
-        // ✅ SAFE ATTEMPT ID EXTRACTION FROM RESPONSE
         attemptId = safeIntParse(
             response['data']?['id'] ?? response['id'],
             context: 'New attempt ID from API response',
@@ -242,12 +225,7 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
         );
 
         if (attemptId == 0) {
-          throw Exception(
-              "❌ NO VALID ATTEMPT ID RETURNED!\n"
-                  "Response data: ${response['data']}\n"
-                  "Response id: ${response['id']}\n"
-                  "Full response: $response"
-          );
+          throw Exception("❌ NO VALID ATTEMPT ID RETURNED!");
         }
 
         developer.log("✅ NEW ATTEMPT CREATED: ID $attemptId (Attempt #$nextAttemptNumber)");
@@ -255,13 +233,12 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
         attemptId = _safeGetAttemptId(latestAttempt!);
       }
 
-      // ✅ STEP 4: NAVIGATE TO QUIZ PLAYER
       final isInstantQuiz = _isInstantQuiz(widget.quiz);
       if (!mounted) return;
 
       final routeData = {
         'quiz': widget.quiz,
-        'attempt_id': attemptId, // ✅ GUARANTEED TO BE INT
+        'attempt_id': attemptId,
       };
 
       developer.log('🎯 Navigating to ${isInstantQuiz ? "Instant" : "Standard"} Quiz Player with attempt ID: $attemptId');
@@ -271,12 +248,9 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
       } else {
         context.go('/quizzes/standard-player', extra: routeData);
       }
-
     } catch (e, stackTrace) {
       developer.log("❌ START QUIZ ERROR: $e\nSTACK TRACE:\n$stackTrace");
-
       if (!mounted) return;
-
       _showErrorSnackBar("Failed to start quiz: ${e.toString().split('\n').first}");
     } finally {
       if (mounted) {
@@ -285,10 +259,8 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
     }
   }
 
-  /// ✅ RESUME SNACKBAR
   void _showResumeSnackBar(int attemptNumber) {
     if (!mounted) return;
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -306,10 +278,8 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
     );
   }
 
-  /// ✅ ERROR SNACKBAR
   void _showErrorSnackBar(String message) {
     if (!mounted) return;
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -332,7 +302,6 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
       final slug = widget.quiz['slug'] ?? widget.quiz['id'].toString();
       final shareUrl = "https://prepking.online/q/$slug";
       final title = widget.quiz['quiz_title'] ?? "Check out this quiz!";
-
       Share.share(
         "Hey! Try this amazing quiz on PrepKing:\n\n$title\n\n$shareUrl",
         subject: title,
@@ -350,29 +319,21 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
     }
   }
 
-  /// ✅ FIXED: SAFE ATTEMPT HISTORY WITH MAXIMUM ERROR PROTECTION
   Widget _buildAttemptHistory() {
     return Consumer(
       builder: (context, ref, child) {
         final attemptsAsync = ref.watch(quizAttemptsProvider(_quizId));
-
         return attemptsAsync.when(
           data: (attempts) {
             if (attempts.isEmpty) return const SizedBox.shrink();
 
-            // ✅ SAFE SORTING WITH ERROR HANDLING
             List<Map<String, dynamic>> sortedAttempts;
             try {
               sortedAttempts = List.from(attempts);
               sortedAttempts.sort((a, b) {
-                try {
-                  final idA = safeIntParse(a['id'], context: 'History sort A', defaultValue: 0);
-                  final idB = safeIntParse(b['id'], context: 'History sort B', defaultValue: 0);
-                  return idB.compareTo(idA); // Newest first
-                } catch (e) {
-                  developer.log('❌ Sort error: $e');
-                  return 0;
-                }
+                final idA = safeIntParse(a['id'], context: 'History sort A', defaultValue: 0);
+                final idB = safeIntParse(b['id'], context: 'History sort B', defaultValue: 0);
+                return idB.compareTo(idA);
               });
             } catch (e) {
               developer.log('❌ Attempt history sorting error: $e');
@@ -382,9 +343,7 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
             return Card(
               margin: const EdgeInsets.only(top: 16, bottom: 8),
               elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -478,11 +437,7 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                               ],
                             ),
                             trailing: status == 'in_progress'
-                                ? const Icon(
-                              Icons.play_arrow_rounded,
-                              color: Colors.orange,
-                              size: 20,
-                            )
+                                ? const Icon(Icons.play_arrow_rounded, color: Colors.orange, size: 20)
                                 : Text(
                               score,
                               style: GoogleFonts.poppins(
@@ -547,15 +502,10 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
   String _getRelativeTime(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-    if (difference.inDays > 0) {
-      return '${difference.inDays}d ago';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}m ago';
-    } else {
-      return 'Just now';
-    }
+    if (difference.inDays > 0) return '${difference.inDays}d ago';
+    if (difference.inHours > 0) return '${difference.inHours}h ago';
+    if (difference.inMinutes > 0) return '${difference.inMinutes}m ago';
+    return 'Just now';
   }
 
   @override
@@ -563,7 +513,6 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
     final quiz = widget.quiz;
     final isInstant = _isInstantQuiz(quiz);
 
-    // ✅ VALIDATE QUIZ DATA
     if (_quizId == 0) {
       return Scaffold(
         appBar: AppBar(
@@ -576,15 +525,9 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
             children: [
               Icon(Icons.error_outline, size: 80, color: Colors.red),
               SizedBox(height: 16),
-              Text(
-                'Invalid quiz data',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
+              Text('Invalid quiz data', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               SizedBox(height: 8),
-              Text(
-                'Please try again or contact support',
-                style: TextStyle(color: Colors.grey),
-              ),
+              Text('Please try again or contact support', style: TextStyle(color: Colors.grey)),
             ],
           ),
         ),
@@ -626,17 +569,13 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            // 📱 Quiz Info Card
             Card(
               elevation: 8,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   children: [
-                    // 🎯 Quiz Title
                     Text(
                       quiz['quiz_title'] ?? "Quiz",
                       style: GoogleFonts.poppins(
@@ -647,7 +586,6 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 20),
-                    // 📊 Info Chips
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
@@ -667,7 +605,6 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                         ),
                       ],
                     ),
-                    // ⚡ Instant Quiz Badge
                     if (isInstant) ...[
                       const SizedBox(height: 20),
                       Container(
@@ -703,7 +640,6 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                         ),
                       ),
                     ],
-                    // 📝 Quiz Description
                     if (quiz['description'] != null && quiz['description'].toString().isNotEmpty) ...[
                       const SizedBox(height: 20),
                       Container(
@@ -728,17 +664,11 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                 ),
               ),
             ),
-
-            // ✅ ATTEMPT HISTORY
             _buildAttemptHistory(),
             const SizedBox(height: 24),
-
-            // 📋 Instructions Card
             Card(
               elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: Column(
@@ -779,8 +709,6 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
               ),
             ),
             const SizedBox(height: 32),
-
-            // ✅ SMART START QUIZ BUTTON
             Consumer(
               builder: (context, ref, child) {
                 final latestAttemptAsync = ref.watch(latestQuizAttemptProvider(_quizId));
@@ -788,7 +716,6 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                 Color buttonColor = const Color(0xFF6C5CE7);
                 IconData buttonIcon = isInstant ? Icons.flash_on : Icons.play_arrow_rounded;
 
-                // Check for in-progress attempt
                 if (latestAttemptAsync.asData?.value != null) {
                   final latestAttempt = latestAttemptAsync.asData!.value!;
                   final status = latestAttempt['status']?.toString() ?? '';
@@ -835,7 +762,6 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                         ),
                       ),
                     ),
-                    // ✅ RESUME INFO BANNER
                     Consumer(
                       builder: (context, ref, child) {
                         final latestAttemptAsync = ref.watch(latestQuizAttemptProvider(_quizId));
@@ -886,7 +812,6 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
     );
   }
 
-  // 🛠️ HELPER METHODS
   Widget _infoChip(IconData icon, String text) {
     return Column(
       children: [
