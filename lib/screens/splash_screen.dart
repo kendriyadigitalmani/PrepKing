@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';        // ← Added for initialization
+import 'package:google_sign_in/google_sign_in.dart';      // ← Added for initialization
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -22,33 +24,37 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   void initState() {
     super.initState();
     _lottieController = AnimationController(vsync: this);
+    _initializeApp(); // ← Start async initialization immediately
+  }
 
-    // Delayed navigation with full auth & onboarding logic
-    Future.delayed(const Duration(milliseconds: 3500), () async {
+  Future<void> _initializeApp() async {
+    try {
+      // Initialize Firebase and Google Sign-In (moved here from main())
+      await Firebase.initializeApp();
+      await GoogleSignIn.instance.initialize();
+
+      // Load preferences and check current user
+      final prefs = await SharedPreferences.getInstance();
+      final user = FirebaseAuth.instance.currentUser;
+      final seenOnboarding = prefs.getBool('seenOnboarding') ?? false;
+
+      // Ensure a minimum splash duration for smooth UX (your Lottie is ~3-4s)
+      await Future.delayed(const Duration(milliseconds: 1200));
+
       if (!mounted) return;
 
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final user = FirebaseAuth.instance.currentUser;
-        final seenOnboarding = prefs.getBool('seenOnboarding') ?? false;
-
-        String targetRoute;
-        if (user != null) {
-          targetRoute = seenOnboarding ? '/home' : '/onboarding';
-        } else {
-          targetRoute = '/login';
-        }
-
-        if (mounted) {
-          context.go(targetRoute);
-        }
-      } catch (e) {
-        // Fallback: go to login if something fails
-        if (mounted) {
-          context.go('/login');
-        }
+      // Navigate based on auth state
+      if (user != null) {
+        context.go(seenOnboarding ? '/home' : '/onboarding');
+      } else {
+        context.go('/login');
       }
-    });
+    } catch (e) {
+      // On any error, fallback to login
+      if (mounted) {
+        context.go('/login');
+      }
+    }
   }
 
   @override
@@ -135,6 +141,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 // Keep your beautiful bouncing dots loader (unchanged)
 class _DotsLoader extends StatefulWidget {
   const _DotsLoader();
+
   @override
   State<_DotsLoader> createState() => _DotsLoaderState();
 }

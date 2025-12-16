@@ -1,19 +1,8 @@
-// lib/main.dart — UPDATED WITH DAILY QUIZZES ROUTE
-import 'dart:async';
-import 'package:animate_do/animate_do.dart';
-import 'package:confetti/confetti.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
+// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:prepking/screens/courses/contents/pdf_content_screen.dart';
-import 'package:prepking/screens/courses/contents/quiz_content_screen.dart';
-import 'package:prepking/screens/courses/contents/text_content_screen.dart';
-import 'package:prepking/screens/courses/contents/video_content_screen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:lottie/lottie.dart';
 
 // ── SCREENS ─────────────────────
@@ -35,21 +24,29 @@ import 'screens/leaderboard/leaderboard_screen.dart';
 import 'screens/courses/course_list_screen.dart';
 import 'screens/courses/course_detail_screen.dart';
 import 'screens/courses/content_list_screen.dart';
+import 'screens/courses/contents/pdf_content_screen.dart';
+import 'screens/courses/contents/quiz_content_screen.dart';
+import 'screens/courses/contents/text_content_screen.dart';
+import 'screens/courses/contents/video_content_screen.dart';
 
 // ── PLACEHOLDER SCREENS ─────────────────────
 class CertificatesScreen extends StatelessWidget {
   const CertificatesScreen({super.key});
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
         title: const Text("My Certificates"),
         leading: BackButton(onPressed: () => context.pop())),
-    body: const Center(child: Text("Certificates Loading Soon...", style: TextStyle(fontSize: 20))),
+    body: const Center(
+        child: Text("Certificates Loading Soon...",
+            style: TextStyle(fontSize: 20))),
   );
 }
 
 class QuizHistoryScreen extends StatelessWidget {
   const QuizHistoryScreen({super.key});
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -61,6 +58,7 @@ class QuizHistoryScreen extends StatelessWidget {
 
 class EditProfileScreen extends StatelessWidget {
   const EditProfileScreen({super.key});
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -72,6 +70,7 @@ class EditProfileScreen extends StatelessWidget {
 
 class ProfileSettingsScreen extends StatelessWidget {
   const ProfileSettingsScreen({super.key});
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -82,44 +81,18 @@ class ProfileSettingsScreen extends StatelessWidget {
 }
 
 // ── MAIN ─────────────────────
-void main() async {
+// Fastest possible start – no async work here
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await Future.delayed(const Duration(milliseconds: 100));
-  await Firebase.initializeApp();
-  await GoogleSignIn.instance.initialize();
   runApp(const ProviderScope(child: PrepKingApp()));
 }
 
-// ── PROVIDERS ────────────────────────
-final authProvider = Provider((ref) => FirebaseAuth.instance);
-final authStateProvider = StreamProvider<User?>((ref) => ref.watch(authProvider).authStateChanges());
-final sharedPrefsProvider = FutureProvider<SharedPreferences>((ref) => SharedPreferences.getInstance());
-
 // ── ROUTER ─────────────────────
+// Redirect simplified: all navigation logic moved to SplashScreen
 final routerProvider = Provider<GoRouter>((ref) {
-  final auth = ref.watch(authStateProvider);
-  final prefsFuture = ref.watch(sharedPrefsProvider);
   return GoRouter(
     initialLocation: '/splash',
-    redirect: (context, state) {
-      if (state.matchedLocation == '/splash') return null;
-      final prefs = prefsFuture.value;
-      final loggedIn = auth.value != null;
-      final seenOnboarding = prefs?.getBool('seenOnboarding') ?? false;
-      if (!loggedIn) {
-        if (!state.matchedLocation.startsWith('/login')) {
-          return '/login';
-        }
-      } else {
-        if (state.matchedLocation == '/login') {
-          return seenOnboarding ? '/home' : '/onboarding';
-        }
-        if (!seenOnboarding && state.matchedLocation != '/onboarding') {
-          return '/onboarding';
-        }
-      }
-      return null;
-    },
+    redirect: (_, __) => null, // ← No blocking async logic here
     routes: [
       GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
@@ -239,6 +212,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 // ── APP & SCAFFOLD ─────────────────────
 class PrepKingApp extends ConsumerWidget {
   const PrepKingApp({super.key});
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
@@ -257,6 +231,7 @@ class PrepKingApp extends ConsumerWidget {
 class MainScaffold extends ConsumerStatefulWidget {
   final Widget child;
   const MainScaffold({super.key, required this.child});
+
   @override
   ConsumerState<MainScaffold> createState() => _MainScaffoldState();
 }
@@ -264,7 +239,6 @@ class MainScaffold extends ConsumerStatefulWidget {
 class _MainScaffoldState extends ConsumerState<MainScaffold> {
   int _currentIndex = 0;
   final List<String> _locations = ['/home', '/courses', '/quizzes', '/leaderboard', '/profile'];
-
   DateTime? _lastBackPressTime;
 
   Future<bool> _onWillPop() async {
