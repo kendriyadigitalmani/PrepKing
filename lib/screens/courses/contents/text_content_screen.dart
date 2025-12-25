@@ -1,12 +1,11 @@
 // lib/screens/course/contents/text_content_screen.dart
-
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart'; // <-- Added for context.push
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_html/flutter_html.dart';
 
 class TextContentScreen extends StatelessWidget {
   final Map<String, dynamic> content;
-
   const TextContentScreen({super.key, required this.content});
 
   /// Safely extract and trim ctext – this is the only field we use for text content
@@ -41,7 +40,7 @@ class TextContentScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String? body = _getTextContent();
-    final bool isHtml = body != null && _isHtmlContent(body);
+    final bool isHtml = body != null && _isHtmlContent(body ?? '');
     final String readingTimeText = _getReadingTimeDisplay();
     final String title = content['title']?.toString().trim() ?? 'Untitled Lesson';
 
@@ -77,9 +76,7 @@ class TextContentScreen extends StatelessWidget {
                   ),
                 ),
               ),
-
             const SizedBox(height: 24),
-
             // Title
             Text(
               title,
@@ -89,9 +86,7 @@ class TextContentScreen extends StatelessWidget {
                 color: Colors.black87,
               ),
             ),
-
             const SizedBox(height: 12),
-
             // Reading Time
             if (readingTimeText.isNotEmpty)
               Row(
@@ -104,8 +99,36 @@ class TextContentScreen extends StatelessWidget {
                   ),
                 ],
               ),
-
             if (readingTimeText.isNotEmpty) const SizedBox(height: 16),
+
+            // === NEW: Listen Button (between title/reading time and divider) ===
+            if (body != null)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      context.push(
+                        '/courses/content/text-audio',
+                        extra: {
+                          'title': title,
+                          'text': body,
+                        },
+                      );
+                    },
+                    icon: const Icon(Icons.headphones, size: 20),
+                    label: const Text("Listen to this lesson"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6C5CE7),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
 
             const Divider(height: 40, thickness: 1),
 
@@ -159,7 +182,6 @@ class TextContentScreen extends StatelessWidget {
                   ),
                 ),
               ),
-
             const SizedBox(height: 120), // Bottom padding for navigation
           ],
         ),

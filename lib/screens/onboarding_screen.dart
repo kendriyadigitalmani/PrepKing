@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
 
-// ✅ Import UserPreferences instead of SharedPreferences
 import '../core/utils/user_preferences.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -43,6 +42,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     super.dispose();
   }
 
+  /// Called when user completes onboarding
+  Future<void> _completeOnboarding() async {
+    // Mark onboarding as seen using the safe, updated UserPreferences
+    await UserPreferences().saveOnboardingSeen();
+
+    if (!mounted) return;
+
+    // Always go to login after onboarding (user must sign in to save progress)
+    // This is best practice: onboarding → login → home
+    context.go('/login');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -66,6 +77,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
+                  // Page indicators
                   Row(
                     children: List.generate(
                       onboardingData.length,
@@ -81,23 +93,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       ),
                     ),
                   ),
+                  // Next / Done button
                   FloatingActionButton(
                     backgroundColor: Colors.white,
                     elevation: 6,
-                    child: Icon(
-                      _currentPage == onboardingData.length - 1
-                          ? Icons.check
-                          : Icons.arrow_forward,
-                      color: const Color(0xFF6C5CE7),
-                      size: 28,
-                    ),
                     onPressed: () async {
                       if (_currentPage == onboardingData.length - 1) {
-                        // ✅ Use UserPreferences to mark onboarding as seen
-                        final prefs = UserPreferences();
-                        await prefs.saveOnboardingSeen(); // <-- new helper method
-
-                        if (mounted) context.go('/login'); // or '/home' if you auto-login
+                        await _completeOnboarding();
                       } else {
                         _pageController.nextPage(
                           duration: const Duration(milliseconds: 400),
@@ -105,6 +107,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         );
                       }
                     },
+                    child: Icon(
+                      _currentPage == onboardingData.length - 1
+                          ? Icons.check
+                          : Icons.arrow_forward,
+                      color: const Color(0xFF6C5CE7),
+                      size: 28,
+                    ),
                   ),
                 ],
               ),
@@ -133,6 +142,14 @@ class OnboardingPage extends StatelessWidget {
             width: 320,
             fit: BoxFit.contain,
             repeat: true,
+            errorBuilder: (context, error, stackTrace) {
+              // Fallback if Lottie fails to load
+              return const Icon(
+                Icons.quiz,
+                size: 200,
+                color: Colors.white70,
+              );
+            },
           ),
           const SizedBox(height: 60),
           Text(

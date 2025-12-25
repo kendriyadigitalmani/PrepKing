@@ -1,5 +1,4 @@
 // lib/screens/home/home_screen.dart
-
 import 'package:animate_do/animate_do.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -7,9 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
+
 import '../../providers/user_provider.dart';
-// ✅ Add UserPreferences import
 import '../../core/utils/user_preferences.dart';
+import '../../providers/continue_learning_provider.dart'; // NEW IMPORT
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -55,7 +55,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // HEADER — Use provider data first, fallback to UserPreferences if needed
+                  // HEADER
                   Row(
                     children: [
                       Expanded(
@@ -70,12 +70,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
                                 ],
                               );
                             } else {
-                              // Provider returned null → try local cache
                               return _buildFallbackHeader();
                             }
                           },
-                          loading: () => _buildFallbackHeader(), // Show cached while loading
-                          error: (_, __) => _buildFallbackHeader(), // Show cached on error
+                          loading: () => _buildFallbackHeader(),
+                          error: (_, __) => _buildFallbackHeader(),
                         ),
                       ),
                       CircleAvatar(
@@ -91,7 +90,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
                     ],
                   ),
                   const SizedBox(height: 30),
-                  // Streak & Coins — same logic: provider first, fallback to local
+
+                  // Streak & Coins
                   userAsync.when(
                     data: (user) {
                       if (user != null) {
@@ -110,7 +110,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
                     error: (_, __) => _buildFallbackStats(),
                   ),
                   const SizedBox(height: 30),
-                  _continueCard("Algebra Mastery", 0.75),
+
+                  // NEW: Dynamic Continue Learning Section
+                  _buildContinueLearningSection(),
+
                   const SizedBox(height: 20),
                   _dailyChallengeCard(),
                   const SizedBox(height: 20),
@@ -124,7 +127,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
     );
   }
 
-  // ✅ Fallback using UserPreferences
+  // Fallback Header (using cached data)
   Widget _buildFallbackHeader() {
     return FutureBuilder<Map<String, dynamic>?>(
       future: UserPreferences().getUserData(),
@@ -141,6 +144,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
     );
   }
 
+  // Fallback Stats (streak & coins)
   Widget _buildFallbackStats() {
     return FutureBuilder<Map<String, dynamic>?>(
       future: UserPreferences().getUserData(),
@@ -159,7 +163,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
     );
   }
 
-  // ... rest of your widgets unchanged (_streakCard, _coinsCard, etc.)
   Widget _streakCard(int streak) => FadeInLeft(
     child: Container(
       padding: const EdgeInsets.all(20),
@@ -194,50 +197,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
           Lottie.asset('assets/lottie/coin.json', height: 60),
           Text(coins.toString(), style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
           Text("Coins", style: GoogleFonts.poppins(fontSize: 14, color: Colors.white)),
-        ],
-      ),
-    ),
-  );
-
-  // ... _continueCard, _dailyChallengeCard, _quickActions — unchanged
-  Widget _continueCard(String title, double progress) => FadeInUp(
-    child: Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20)],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text("Continue Learning", style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Image.asset("assets/images/course_placeholder.jpg", width: 80, height: 80, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(color: Colors.grey[300], child: const Icon(Icons.menu_book)),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 8),
-                    LinearProgressIndicator(value: progress, backgroundColor: Colors.grey[300], valueColor: const AlwaysStoppedAnimation(Color(0xFF6C5CE7))),
-                    const SizedBox(height: 8),
-                    Text("${(progress * 100).toInt()}% Complete", style: GoogleFonts.poppins(fontSize: 14)),
-                  ],
-                ),
-              ),
-              const Icon(Icons.arrow_forward_ios, color: Color(0xFF6C5CE7)),
-            ],
-          ),
         ],
       ),
     ),
@@ -305,6 +264,136 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
         const SizedBox(height: 12),
         Text(title, style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: color)),
       ],
+    ),
+  );
+
+  // ==================== NEW: CONTINUE LEARNING SECTION ====================
+
+  Widget _buildContinueLearningSection() {
+    final userAsync = ref.watch(currentUserProvider);
+    return userAsync.when(
+      data: (user) {
+        if (user == null) return const SizedBox.shrink();
+        final progressAsync = ref.watch(continueLearningProvider(user.id));
+        return progressAsync.when(
+          loading: () => _continueSkeleton(),
+          error: (_, __) => const SizedBox.shrink(),
+          data: (courses) {
+            if (courses.isEmpty) return const SizedBox.shrink();
+            return Column(
+              children: courses.map((item) => _continueCourseCard(item)).toList(),
+            );
+          },
+        );
+      },
+      loading: () => _continueSkeleton(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
+  Widget _continueCourseCard(Map<String, dynamic> item) => FadeInUp(
+    child: GestureDetector(
+      onTap: () {
+        final courseId = int.tryParse(item['course_quiz_id']?.toString() ?? '');
+        if (courseId != null && courseId > 0) {
+          context.push('/courses/detail/$courseId');
+        }
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: const [
+            BoxShadow(color: Colors.black12, blurRadius: 20),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Continue Learning",
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.network(
+                    item['course_image'] ?? '',
+                    width: 80,
+                    height: 80,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      width: 80,
+                      height: 80,
+                      color: Colors.grey[300],
+                      child: const Icon(Icons.menu_book, color: Colors.grey),
+                    ),
+                    loadingBuilder: (_, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Container(
+                        width: 80,
+                        height: 80,
+                        color: Colors.grey[300],
+                        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item['title'] ?? 'Untitled Course',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(
+                        value: (double.tryParse(item['progress_percentage']?.toString() ?? '0') ?? 0) / 100,
+                        backgroundColor: Colors.grey[300],
+                        valueColor: const AlwaysStoppedAnimation(Color(0xFF6C5CE7)),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "${item['progress_percentage'] ?? '0'}% Complete",
+                        style: GoogleFonts.poppins(fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.arrow_forward_ios,
+                  color: Color(0xFF6C5CE7),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _continueSkeleton() => FadeInUp(
+    child: Container(
+      height: 160,
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(24),
+      ),
     ),
   );
 }

@@ -1,92 +1,184 @@
 // lib/screens/splash_screen.dart
-import 'dart:async';
 import 'package:animate_do/animate_do.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';        // ← Added for initialization
-import 'package:google_sign_in/google_sign_in.dart';      // ← Added for initialization
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-class SplashScreen extends StatefulWidget {
+import '../providers/app_init_provider.dart';
+import '../core/utils/user_preferences.dart';
+
+class SplashScreen extends ConsumerWidget {
   const SplashScreen({super.key});
 
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watch the initialization state
+    final initAsync = ref.watch(appInitProvider);
 
-class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
-  late final AnimationController _lottieController;
+    // Listen for completion or specific errors
+    ref.listen(appInitProvider, (previous, next) {
+      next.whenOrNull(
+        data: (_) async {
+          // Initialization successful → decide next route
+          final prefs = UserPreferences();
+          final seenOnboarding = await prefs.hasSeenOnboarding();
+          final user = FirebaseAuth.instance.currentUser;
 
-  @override
-  void initState() {
-    super.initState();
-    _lottieController = AnimationController(vsync: this);
-    _initializeApp(); // ← Start async initialization immediately
-  }
+          if (!seenOnboarding) {
+            context.go('/onboarding');
+          } else if (user == null) {
+            context.go('/login');
+          } else {
+            context.go('/home');
+          }
+        },
+        error: (error, stack) {
+          final errorMsg = error.toString();
 
-  Future<void> _initializeApp() async {
-    try {
-      // Initialize Firebase and Google Sign-In (moved here from main())
-      await Firebase.initializeApp();
-      await GoogleSignIn.instance.initialize();
+          // No Internet Connection
+          if (errorMsg.contains('NO_NETWORK')) {
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (_) => AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: Text(
+                  'No Internet Connection',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                ),
+                content: Text(
+                  'Network not available.\nPlease check your internet connection and try again.',
+                  style: GoogleFonts.poppins(),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      ref.invalidate(appInitProvider); // Retry
+                    },
+                    child: Text(
+                      'Retry',
+                      style: GoogleFonts.poppins(
+                        color: const Color(0xFF6C5CE7),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+          // Update Required
+          else if (errorMsg.contains('UPDATE_REQUIRED')) {
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (_) => AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: Text(
+                  'Update Required',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                ),
+                content: Text(
+                  'A new version of PrepKing is available.\nPlease update to continue using the app.',
+                  style: GoogleFonts.poppins(),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () async {
+                      final uri = Uri.parse(
+                        'https://play.google.com/store/apps/details?id=com.dube.prepking',
+                      );
+                      if (await canLaunchUrl(uri)) {
+                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      }
+                    },
+                    child: Text(
+                      'UPDATE NOW',
+                      style: GoogleFonts.poppins(
+                        color: const Color(0xFF6C5CE7),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+          // Any other unexpected error
+          else {
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (_) => AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: Text(
+                  'Something Went Wrong',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                ),
+                content: Text(
+                  'Failed to initialize the app.\nPlease try again.',
+                  style: GoogleFonts.poppins(),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      ref.invalidate(appInitProvider);
+                    },
+                    child: Text(
+                      'Retry',
+                      style: GoogleFonts.poppins(
+                        color: const Color(0xFF6C5CE7),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+        },
+      );
+    });
 
-      // Load preferences and check current user
-      final prefs = await SharedPreferences.getInstance();
-      final user = FirebaseAuth.instance.currentUser;
-      final seenOnboarding = prefs.getBool('seenOnboarding') ?? false;
-
-      // Ensure a minimum splash duration for smooth UX (your Lottie is ~3-4s)
-      await Future.delayed(const Duration(milliseconds: 1200));
-
-      if (!mounted) return;
-
-      // Navigate based on auth state
-      if (user != null) {
-        context.go(seenOnboarding ? '/home' : '/onboarding');
-      } else {
-        context.go('/login');
+    // Safety timeout in case initialization takes too long
+    Future.delayed(const Duration(seconds: 12), () {
+      if (context.mounted && initAsync.isLoading) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Taking longer than expected...',
+              style: GoogleFonts.poppins(),
+            ),
+            backgroundColor: Colors.orange.shade700,
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: () => ref.invalidate(appInitProvider),
+            ),
+          ),
+        );
       }
-    } catch (e) {
-      // On any error, fallback to login
-      if (mounted) {
-        context.go('/login');
-      }
-    }
-  }
+    });
 
-  @override
-  void dispose() {
-    _lottieController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+    // === BEAUTIFUL SPLASH UI (100% PRESERVED) ===
     return Scaffold(
       backgroundColor: const Color(0xFF6C5CE7),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Lottie with instant fallback
             Lottie.asset(
               'assets/lottie/splash.json',
-              controller: _lottieController,
-              onLoaded: (composition) {
-                if (mounted) {
-                  _lottieController
-                    ..duration = composition.duration
-                    ..forward()
-                    ..repeat();
-                }
-              },
               width: 280,
               fit: BoxFit.contain,
               repeat: true,
-              // Fallback shown immediately if asset fails to load
               errorBuilder: (context, error, stackTrace) {
                 return Column(
                   children: [
@@ -130,7 +222,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
               ),
             ),
             const SizedBox(height: 120),
-            const _DotsLoader(),
+            if (initAsync.isLoading) const _DotsLoader(),
           ],
         ),
       ),
@@ -138,7 +230,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   }
 }
 
-// Keep your beautiful bouncing dots loader (unchanged)
+/// Beautiful bouncing dots loader (exactly as in your original code)
 class _DotsLoader extends StatefulWidget {
   const _DotsLoader();
 
@@ -147,10 +239,11 @@ class _DotsLoader extends StatefulWidget {
 }
 
 class _DotsLoaderState extends State<_DotsLoader> with TickerProviderStateMixin {
-  late final List<AnimationController> _controllers = List.generate(3, (_) {
-    return AnimationController(vsync: this, duration: const Duration(milliseconds: 600))
-      ..repeat(reverse: true);
-  });
+  late final List<AnimationController> _controllers = List.generate(
+    3,
+        (_) => AnimationController(vsync: this, duration: const Duration(milliseconds: 600))
+      ..repeat(reverse: true),
+  );
 
   @override
   void initState() {
@@ -184,7 +277,9 @@ class _DotsLoaderState extends State<_DotsLoader> with TickerProviderStateMixin 
             decoration: const BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
-              boxShadow: [BoxShadow(color: Colors.white30, blurRadius: 8, spreadRadius: 2)],
+              boxShadow: [
+                BoxShadow(color: Colors.white30, blurRadius: 8, spreadRadius: 2),
+              ],
             ),
           ),
         );

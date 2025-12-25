@@ -1,15 +1,50 @@
 // lib/core/utils/user_preferences.dart
+
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// A lightweight utility class for storing non-sensitive app preferences.
+///
+/// IMPORTANT BEST PRACTICE (for Google Play compliance & security):
+/// - This class should ONLY store flags, settings, and non-personal data.
+/// - NEVER store profile data like name, email, or user_id here for display.
+///   Use providers (currentUserProvider / userWithProgressProvider) for all user profile data.
+/// - Personal data in SharedPreferences is considered insecure and can cause Play Store rejections.
+///
+/// Current safe usage:
+/// - seenOnboarding (flag)
+/// - Future expansion: theme, notifications, etc.
 class UserPreferences {
-  static const _user_id = 'user_id';
-  static const _firebase_id = 'firebase_id';
-  static const _name = 'user_name';
-  static const _email = 'user_email';
-  static const _is_first_time = 'is_first_time';
+  // Keys – keep them private
   static const _seen_onboarding = 'seenOnboarding';
-  static const _is_guest = 'is_guest';
+  // Removed deprecated personal data keys (name, email, user_id, etc.)
+  // They caused data mixing bugs and compliance risks.
 
+  /// Marks onboarding as seen – safe flag
+  Future<void> saveOnboardingSeen() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_seen_onboarding, true);
+  }
+
+  /// Checks if onboarding has been seen
+  Future<bool> hasSeenOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_seen_onboarding) ?? false;
+  }
+
+  /// Clears ALL preferences.
+  /// Called during full logout to ensure clean state.
+  Future<void> clearAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // DEPRECATED METHODS (kept temporarily for backward compatibility)
+  // These will be removed in future updates.
+  // DO NOT USE THEM IN NEW CODE.
+  // ────────────────────────────────────────────────────────────────
+
+  @Deprecated('Use providers instead. This method stores personal data unsafely.')
   Future<void> saveUserData({
     required int userId,
     required String firebaseId,
@@ -18,54 +53,25 @@ class UserPreferences {
     bool isFirstTime = false,
     bool isGuest = false,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_user_id, userId);
-    await prefs.setString(_firebase_id, firebaseId);
-    await prefs.setString(_name, name);
-    await prefs.setString(_email, email);
-    await prefs.setBool(_is_first_time, isFirstTime);
-    await prefs.setBool(_seen_onboarding, true);
-    await prefs.setBool(_is_guest, isGuest);
+    // No-op or minimal – do NOT save personal data
+    await saveOnboardingSeen();
   }
 
-  Future<void> saveGuestData({
-    required String firebaseId,
-  }) async {
-    // For guest: no backend user ID yet, so use -1 or handle specially
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_user_id, -1); // or omit if you won't use it
-    await prefs.setString(_firebase_id, firebaseId);
-    await prefs.setString(_name, 'Guest');
-    await prefs.setString(_email, '');
-    await prefs.setBool(_is_first_time, true);
-    await prefs.setBool(_seen_onboarding, true);
-    await prefs.setBool(_is_guest, true);
+  @Deprecated('Guest mode should not rely on local storage for profile data.')
+  Future<void> saveGuestData({required String firebaseId}) async {
+    await saveOnboardingSeen();
   }
 
+  @Deprecated('Do not read profile data from SharedPreferences. Use currentUserProvider.')
   Future<Map<String, dynamic>?> getUserData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final firebaseId = prefs.getString(_firebase_id);
-    if (firebaseId == null) return null;
-
+    // Return only safe flags – never personal data
     return {
-      'user_id': prefs.getInt(_user_id) ?? -1,
-      'firebase_id': firebaseId,
-      'name': prefs.getString(_name) ?? 'User',
-      'email': prefs.getString(_email) ?? '',
-      'is_first_time': prefs.getBool(_is_first_time) ?? true,
-      'seenOnboarding': prefs.getBool(_seen_onboarding) ?? false,
-      'is_guest': prefs.getBool(_is_guest) ?? false,
+      'seenOnboarding': await hasSeenOnboarding(),
     };
   }
 
+  @Deprecated('Use clearAll() instead.')
   Future<void> clear() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); // or remove specific keys
-  }
-
-  // Inside UserPreferences class
-  Future<void> saveOnboardingSeen() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_seen_onboarding, true);
+    await clearAll();
   }
 }

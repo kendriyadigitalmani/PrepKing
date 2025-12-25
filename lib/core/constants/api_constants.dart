@@ -19,4 +19,5 @@ class ApiConstants {
   static const String attemptReview = "/attempt_review";
   static const String firebaseSetting = "/firebase_setting";
   static const String questionPaper = "/question_paper";
+  static const privacyUrl = "https://kendriyadigital.blogspot.com/2025/12/privacy-policy-for-prepking-online.html";
 }

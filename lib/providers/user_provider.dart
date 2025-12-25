@@ -1,16 +1,28 @@
-// lib/providers/user_provider.dart → FIXED VERSION FOR SINGLE USER BY FIREBASE ID
-import 'package:firebase_auth/firebase_auth.dart'; // ← ADD THIS IMPORT
+// ===== FILE: lib/providers/user_provider.dart =====
+// lib/providers/user_provider.dart
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../core/services/api_service.dart';
 import '../models/user_model.dart';
+import 'firebase_init_provider.dart';
 
-// ── API PROVIDER ─────────────────────
+/// ───────── API PROVIDER ─────────────────────────────────────────────
 final apiProvider = Provider<ApiService>((ref) {
   return ref.read(apiServiceProvider);
 });
 
-// ── CURRENT USER (REAL DATA FROM /user?firebaseid={uid}) ─────────────────────
+/// 🔁 We KEEP authStateProvider for any UI that needs real-time auth state (e.g., logout listeners)
+/// But currentUserProvider no longer depends on it for performance.
+final authStateProvider = StreamProvider<User?>((ref) {
+  return FirebaseAuth.instance.authStateChanges();
+});
+
+/// ───────── CURRENT USER (REAL DATA FROM /user?firebaseid={uid}) ───────
+/// ✨ Updated logic: Uses FirebaseAuth.instance.currentUser (synchronous, faster)
+/// Still waits for Firebase to initialize to avoid race conditions.
 final currentUserProvider = FutureProvider<UserModel?>((ref) async {
   final firebaseUser = FirebaseAuth.instance.currentUser;
   if (firebaseUser == null) {
@@ -19,48 +31,37 @@ final currentUserProvider = FutureProvider<UserModel?>((ref) async {
   }
 
   final api = ref.read(apiProvider);
+
   try {
-    // Use the correct endpoint: GET /user?firebaseid={firebase_id}
+    // Using query parameter firebaseid as per API documentation
     final response = await api.get(
       '/user',
-      query: {'firebaseid': firebaseUser.uid}, // ← This filters to the current user
+      query: {'firebaseid': firebaseUser.uid},
     );
-
-    debugPrint("User API Response: $response"); // ← Helpful for debugging
+    debugPrint("User API Response: $response");
 
     final data = response['data'];
-
-    Map<String, dynamic>? userJson;
-
-    if (data != null) {
-      if (data is List) {
-        // If API returns a list (even if only one item), take the first
-        if (data.isNotEmpty) {
-          userJson = data[0] as Map<String, dynamic>;
-        }
-      } else if (data is Map<String, dynamic>) {
-        // Direct single object response
-        userJson = data;
+    if (data is Map<String, dynamic>?) {
+      if (data != null) {
+        return UserModel.fromJson(data);
       }
     }
 
-    if (userJson != null) {
-      return UserModel.fromJson(userJson);
-    } else {
-      debugPrint("No user data found for firebaseid: ${firebaseUser.uid}");
-    }
+    debugPrint("No user data found for uid: ${firebaseUser.uid}");
+    return null;
   } catch (e, stack) {
     debugPrint("User fetch error: $e\n$stack");
+    // Return null instead of rethrowing to avoid UI crash; FutureProvider handles error state
+    return null;
   }
-
-  return null;
 });
 
-// ── CONTINUE COURSE PROGRESS ───────────────────── (unchanged)
+/// ───────── CONTINUE COURSE PROGRESS ─────────────────────────────────
 class UserProgressModel {
   final String courseTitle;
   final double progressPercentage;
   final String? courseImage;
+
   const UserProgressModel({
     required this.courseTitle,
     required this.progressPercentage,
@@ -73,6 +74,7 @@ final continueCourseProvider = FutureProvider<UserProgressModel?>((ref) async {
   try {
     final response = await api.get('/user_progress');
     final data = response['data'];
+
     if (data != null && data is List && data.isNotEmpty) {
       final item = data[0] as Map<String, dynamic>;
       return UserProgressModel(
@@ -84,18 +86,20 @@ final continueCourseProvider = FutureProvider<UserProgressModel?>((ref) async {
   } catch (e) {
     debugPrint("Continue course error: $e");
   }
+
   return const UserProgressModel(
     courseTitle: "Algebra Mastery 101",
     progressPercentage: 68.5,
   );
 });
 
-// ── DAILY CHALLENGE QUIZ ───────────────────── (unchanged)
+/// ───────── DAILY CHALLENGE QUIZ ─────────────────────────────────────
 class DailyQuizModel {
   final int id;
   final String title;
   final int questionCount;
   final String? thumbnail;
+
   const DailyQuizModel({
     required this.id,
     required this.title,
@@ -109,6 +113,7 @@ final dailyChallengeProvider = FutureProvider<DailyQuizModel?>((ref) async {
   try {
     final response = await api.get('/course_quiz', query: {'type': 'daily'});
     final data = response['data'];
+
     if (data != null && data is List && data.isNotEmpty) {
       final quiz = data[0] as Map<String, dynamic>;
       return DailyQuizModel(
@@ -121,6 +126,7 @@ final dailyChallengeProvider = FutureProvider<DailyQuizModel?>((ref) async {
   } catch (e) {
     debugPrint("Daily quiz fetch error: $e");
   }
+
   return const DailyQuizModel(
     id: 999,
     title: "Daily Challenge",
@@ -128,7 +134,7 @@ final dailyChallengeProvider = FutureProvider<DailyQuizModel?>((ref) async {
   );
 });
 
-// ── ONE-TAP REFRESH ALL USER DATA ───────────────────── (unchanged)
+/// ───────── ONE-TAP REFRESH ALL USER DATA ────────────────────────────
 final refreshUserDataProvider = Provider<void Function()>((ref) {
   return () {
     ref.invalidate(currentUserProvider);
