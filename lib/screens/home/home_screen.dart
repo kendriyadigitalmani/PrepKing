@@ -6,25 +6,64 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
-
 import '../../providers/user_provider.dart';
 import '../../core/utils/user_preferences.dart';
-import '../../providers/continue_learning_provider.dart'; // NEW IMPORT
+import '../../providers/continue_learning_provider.dart'; // ← Uses /user_progress/{userId}
+import '../../widgets/language_select_dialog.dart';
+import '../../widgets/exam_select_dialog.dart';
+import '../../models/user_model.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
-
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStateMixin {
   late AnimationController _fireController;
+  bool _hasCheckedDialogs = false;
 
   @override
   void initState() {
     super.initState();
     _fireController = AnimationController(vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final userAsync = ref.read(currentUserProvider);
+      if (userAsync.asData == null || userAsync.asData?.value == null) return;
+      UserModel user = userAsync.asData!.value!;
+      user = await _loadPrefsIfMissing(user);
+      if (!_hasCheckedDialogs) {
+        _hasCheckedDialogs = true;
+        if (user.languageId == null) {
+          final languageSelected = await showLanguageSelectDialog(context);
+          if (languageSelected == true && user.examIds.isEmpty) {
+            await showExamSelectDialog(context);
+          }
+        } else if (user.examIds.isEmpty) {
+          await showExamSelectDialog(context);
+        }
+      }
+    });
+  }
+
+  Future<UserModel> _loadPrefsIfMissing(UserModel user) async {
+    final prefs = UserPreferences();
+    final storedLanguage = await prefs.getLanguage();
+    final storedExams = await prefs.getExams();
+    bool needsUpdate = false;
+    UserModel updatedUser = user;
+    if (user.languageId == null && storedLanguage != null) {
+      updatedUser = user.copyWith(languageId: storedLanguage);
+      needsUpdate = true;
+    }
+    if (user.examIds.isEmpty && storedExams.isNotEmpty) {
+      updatedUser = updatedUser.copyWith(examIds: storedExams);
+      needsUpdate = true;
+    }
+    if (needsUpdate) {
+      ref.invalidate(currentUserProvider);
+    }
+    return updatedUser;
   }
 
   @override
@@ -36,7 +75,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
   @override
   Widget build(BuildContext context) {
     final userAsync = ref.watch(currentUserProvider);
-
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -65,8 +103,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
                               return Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text("Hello,", style: GoogleFonts.poppins(fontSize: 20, color: Colors.white70)),
-                                  Text(user.name, style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
+                                  Text("Hello,",
+                                      style: GoogleFonts.poppins(
+                                          fontSize: 20, color: Colors.white70)),
+                                  Text(user.name,
+                                      style: GoogleFonts.poppins(
+                                          fontSize: 32,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white)),
                                 ],
                               );
                             } else {
@@ -90,7 +134,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
                     ],
                   ),
                   const SizedBox(height: 30),
-
                   // Streak & Coins
                   userAsync.when(
                     data: (user) {
@@ -110,10 +153,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
                     error: (_, __) => _buildFallbackStats(),
                   ),
                   const SizedBox(height: 30),
-
-                  // NEW: Dynamic Continue Learning Section
+                  // Continue Learning Section – NOW LOCKED TO BACKEND PROGRESS
                   _buildContinueLearningSection(),
-
                   const SizedBox(height: 20),
                   _dailyChallengeCard(),
                   const SizedBox(height: 20),
@@ -127,39 +168,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
     );
   }
 
-  // Fallback Header (using cached data)
   Widget _buildFallbackHeader() {
-    return FutureBuilder<Map<String, dynamic>?>(
-      future: UserPreferences().getUserData(),
-      builder: (context, snapshot) {
-        final name = snapshot.data?['name'] ?? 'Warrior';
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("Hello,", style: GoogleFonts.poppins(fontSize: 20, color: Colors.white70)),
-            Text(name, style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
-          ],
-        );
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text("Hello,",
+            style: GoogleFonts.poppins(fontSize: 20, color: Colors.white70)),
+        Text("PrepKing Warrior",
+            style: GoogleFonts.poppins(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: Colors.white)),
+      ],
     );
   }
 
-  // Fallback Stats (streak & coins)
   Widget _buildFallbackStats() {
-    return FutureBuilder<Map<String, dynamic>?>(
-      future: UserPreferences().getUserData(),
-      builder: (context, snapshot) {
-        final data = snapshot.data;
-        final streak = data?['streak'] as int? ?? 7;
-        final coins = data?['coins'] as int? ?? 1250;
-        return Row(
-          children: [
-            Expanded(child: _streakCard(streak)),
-            const SizedBox(width: 16),
-            Expanded(child: _coinsCard(coins)),
-          ],
-        );
-      },
+    return Row(
+      children: [
+        Expanded(child: _streakCard(7)),
+        const SizedBox(width: 16),
+        Expanded(child: _coinsCard(1250)),
+      ],
     );
   }
 
@@ -173,13 +203,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
       ),
       child: Column(
         children: [
-          Lottie.asset('assets/lottie/fire.json', controller: _fireController, onLoaded: (c) {
-            _fireController
-              ..duration = c.duration
-              ..repeat();
-          }, height: 60),
-          Text("$streak Day Streak", style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
-          Text("Keep burning!", style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70)),
+          Lottie.asset('assets/lottie/fire.json',
+              controller: _fireController,
+              onLoaded: (c) {
+                _fireController
+                  ..duration = c.duration
+                  ..repeat();
+              },
+              height: 60),
+          Text("$streak Day Streak",
+              style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white)),
+          Text("Keep burning!",
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70)),
         ],
       ),
     ),
@@ -195,8 +233,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
       child: Column(
         children: [
           Lottie.asset('assets/lottie/coin.json', height: 60),
-          Text(coins.toString(), style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
-          Text("Coins", style: GoogleFonts.poppins(fontSize: 14, color: Colors.white)),
+          Text(coins.toString(),
+              style: GoogleFonts.poppins(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white)),
+          Text("Coins",
+              style: GoogleFonts.poppins(fontSize: 14, color: Colors.white)),
         ],
       ),
     ),
@@ -217,12 +260,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Daily Challenge", style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
-                Text("Current Affairs Quiz", style: GoogleFonts.poppins(fontSize: 16, color: Colors.white)),
+                Text("Daily Challenge",
+                    style: GoogleFonts.poppins(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white)),
+                Text("Current Affairs Quiz",
+                    style: GoogleFonts.poppins(fontSize: 16, color: Colors.white)),
                 const SizedBox(height: 12),
                 ElevatedButton(
                   onPressed: () => context.push('/quizzes/daily'),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.purple),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.purple),
                   child: const Text("Start Now"),
                 ),
               ],
@@ -262,13 +312,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
       children: [
         Icon(icon, size: 48, color: color),
         const SizedBox(height: 12),
-        Text(title, style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: color)),
+        Text(title,
+            style: GoogleFonts.poppins(
+                fontSize: 16, fontWeight: FontWeight.w600, color: color)),
       ],
     ),
   );
 
-  // ==================== NEW: CONTINUE LEARNING SECTION ====================
-
+  // ==================== CONTINUE LEARNING SECTION (NOW ACCURATE) ====================
   Widget _buildContinueLearningSection() {
     final userAsync = ref.watch(currentUserProvider);
     return userAsync.when(
@@ -293,12 +344,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
 
   Widget _continueCourseCard(Map<String, dynamic> item) => FadeInUp(
     child: GestureDetector(
-      onTap: () {
-        final courseId = int.tryParse(item['course_quiz_id']?.toString() ?? '');
-        if (courseId != null && courseId > 0) {
-          context.push('/courses/detail/$courseId');
-        }
-      },
+        onTap: () {
+          final courseId = item['course_id'] as int?;
+          if (courseId != null && courseId > 0) {
+            context.push('/courses/detail/$courseId');
+          }
+        },
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(24),
@@ -341,7 +392,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
                         width: 80,
                         height: 80,
                         color: Colors.grey[300],
-                        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                        child: const Center(
+                            child: CircularProgressIndicator(strokeWidth: 2)),
                       );
                     },
                   ),
@@ -361,15 +413,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
                         ),
                       ),
                       const SizedBox(height: 8),
+                      // FIXED: Use backend progress_percentage directly
                       LinearProgressIndicator(
-                        value: (double.tryParse(item['progress_percentage']?.toString() ?? '0') ?? 0) / 100,
+                        value: (double.tryParse(
+                            item['progress_percentage']?.toString() ?? '0') ??
+                            0.0) /
+                            100.0,
                         backgroundColor: Colors.grey[300],
-                        valueColor: const AlwaysStoppedAnimation(Color(0xFF6C5CE7)),
+                        valueColor:
+                        const AlwaysStoppedAnimation(Color(0xFF6C5CE7)),
+                        minHeight: 8,
+                        borderRadius: BorderRadius.circular(4),
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        "${item['progress_percentage'] ?? '0'}% Complete",
-                        style: GoogleFonts.poppins(fontSize: 14),
+                        "${(double.tryParse(item['progress_percentage']?.toString() ?? '0') ?? 0.0).toStringAsFixed(0)}% Complete",
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF6C5CE7),
+                        ),
                       ),
                     ],
                   ),

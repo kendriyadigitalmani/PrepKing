@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/utils/app_version_validator.dart';
 import '../core/utils/network_utils.dart';
 import '../core/utils/user_preferences.dart';
+import '../models/app_settings.dart';
 import 'app_settings_provider.dart';
 import 'user_provider.dart';
 
@@ -28,19 +29,25 @@ final appInitProvider = FutureProvider<void>((ref) async {
     }
 
     // 2️⃣ START BOTH FIREBASE INITIALIZATION AND APP SETTINGS FETCH IN PARALLEL
-    // This ensures no blocking — splash animation runs smoothly
-    final firebaseFuture = Firebase.initializeApp().catchError((e) {
+    // FIXED: Guard against duplicate Firebase initialization
+    final firebaseFuture = (Firebase.apps.isEmpty)
+        ? Firebase.initializeApp().catchError((e) {
       developer.log('Firebase initialization failed: $e');
       throw Exception('Firebase init failed: $e');
-    });
+    })
+        : Future.value(Firebase.app());
 
     final appSettingsFuture = ref.read(appSettingsProvider.future).catchError((e) {
       developer.log('App settings fetch failed: $e');
       throw Exception('App settings fetch failed: $e');
     });
 
-    // 3️⃣ WAIT FOR APP SETTINGS FIRST — REQUIRED FOR VERSION CHECK
-    final settings = await appSettingsFuture;
+    // 3️⃣ WAIT FOR BOTH TO COMPLETE IN PARALLEL
+    final List<dynamic> results = await Future.wait([firebaseFuture, appSettingsFuture]);
+
+    // results[0] = FirebaseApp (from firebaseFuture)
+    // results[1] = AppSettings (from appSettingsFuture)
+    final AppSettings settings = results[1] as AppSettings;
 
     // 4️⃣ VERSION VALIDATION — If update required, throw specific exception
     final updateRequired = await AppVersionValidator.isUpdateRequired(settings);
@@ -49,18 +56,30 @@ final appInitProvider = FutureProvider<void>((ref) async {
       throw Exception('UPDATE_REQUIRED');
     }
 
-    // 5️⃣ NOW WAIT FOR FIREBASE TO FINISH INITIALIZING (if not already done)
-    await firebaseFuture;
-
-    // 6️⃣ LOAD LOCAL PREFERENCES (e.g., onboarding seen flag)
+    // 5️⃣ LOAD LOCAL PREFERENCES (e.g., onboarding seen flag)
     final prefs = UserPreferences();
     await prefs.hasSeenOnboarding(); // Just ensure it's loaded
 
-    // 7️⃣ IF USER IS LOGGED IN, FETCH THEIR DETAILS FROM BACKEND
+    // 6️⃣ IF USER IS LOGGED IN, FETCH THEIR DETAILS FROM BACKEND
     final firebaseUser = FirebaseAuth.instance.currentUser;
     if (firebaseUser != null) {
       developer.log('User logged in, fetching profile data');
-      await ref.read(currentUserProvider.future);
+      try {
+        await ref.read(currentUserProvider.future);
+      } catch (e) {
+        developer.log('User fetch failed during init: $e');
+        // Critical recovery: if backend user is missing (401/404), sign out Firebase
+        // This prevents getting stuck on splash with an invalid session
+        if (e is Exception && e.toString().contains('401')) {
+          developer.log('Backend user not found (401) → signing out Firebase');
+          await FirebaseAuth.instance.signOut();
+        } else if (e is Exception && e.toString().contains('404')) {
+          developer.log('Backend user not found (404) → signing out Firebase');
+          await FirebaseAuth.instance.signOut();
+        }
+        // Re-throw to show error dialog in splash (user can retry)
+        rethrow;
+      }
     }
 
     // All checks passed → app is ready for navigation

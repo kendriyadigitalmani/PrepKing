@@ -13,8 +13,35 @@ class HelpSupportScreen extends StatelessWidget {
       path: 'support@prepking.in',
       queryParameters: const {'subject': 'PrepKing Support Request'},
     );
+
     if (await canLaunchUrl(emailUri)) {
       await launchUrl(emailUri);
+    }
+    // Removed context-dependent SnackBar to avoid 'Undefined name context' error
+    // Failure is usually silent (no email app installed)
+  }
+
+  Future<void> _launchWhatsApp() async {
+    const String phoneNumber = '6266072809'; // Indian number
+    const String message = 'Hello PrepKing Support, I need help with...';
+    final String encodedMessage = Uri.encodeComponent(message);
+
+    final Uri whatsappUri = Uri.parse(
+      'https://wa.me/$phoneNumber?text=$encodedMessage',
+    );
+
+    if (await canLaunchUrl(whatsappUri)) {
+      await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+    } else {
+      // Fallback to WhatsApp Web
+      final Uri webUri = Uri.parse(
+        'https://web.whatsapp.com/send?phone=$phoneNumber&text=$encodedMessage',
+      );
+      if (await canLaunchUrl(webUri)) {
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      }
+      // Removed context-dependent SnackBar to avoid 'Undefined name context' error
+      // Failure is handled gracefully
     }
   }
 
@@ -38,27 +65,46 @@ class HelpSupportScreen extends StatelessWidget {
                 width: 160,
                 height: 160,
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Icon(Icons.help_outline, size: 120, color: Color(0xFF6C5CE7)),
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.help_outline,
+                  size: 120,
+                  color: Color(0xFF6C5CE7),
+                ),
               ),
             ),
             const SizedBox(height: 32),
+
+            // Email Support
             _buildSupportCard(
               icon: Icons.email_outlined,
               title: "Email Support",
               subtitle: "support@prepking.in",
               onTap: _launchEmail,
+              accentColor: const Color(0xFF6C5CE7),
             ),
             const SizedBox(height: 16),
+
+            // WhatsApp Support
+            _buildSupportCard(
+              icon: Icons.chat,
+              title: "WhatsApp Support",
+              subtitle: "+91 62660 72809",
+              onTap: _launchWhatsApp,
+              accentColor: const Color(0xFF25D366), // WhatsApp green
+            ),
+            const SizedBox(height: 16),
+
+            // Frequently Asked Questions
             _buildSupportCard(
               icon: Icons.help_outline,
               title: "Frequently Asked Questions",
               subtitle: "Find answers to common questions",
               onTap: () {
-                // Placeholder for future FAQ screen
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text("FAQ section coming soon!")),
                 );
               },
+              accentColor: const Color(0xFF6C5CE7),
             ),
           ],
         ),
@@ -71,6 +117,7 @@ class HelpSupportScreen extends StatelessWidget {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    Color accentColor = const Color(0xFF6C5CE7),
   }) {
     return Card(
       elevation: 4,
@@ -79,10 +126,10 @@ class HelpSupportScreen extends StatelessWidget {
         leading: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: const Color(0xFF6C5CE7).withOpacity(0.1),
+            color: accentColor.withOpacity(0.1),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, color: const Color(0xFF6C5CE7), size: 28),
+          child: Icon(icon, color: accentColor, size: 28),
         ),
         title: Text(
           title,

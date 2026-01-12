@@ -1,4 +1,4 @@
-package com.dube.prepking
+package online.prepking
 
 import io.flutter.embedding.android.FlutterActivity
 

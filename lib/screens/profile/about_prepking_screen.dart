@@ -2,9 +2,15 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class AboutPrepKingScreen extends StatelessWidget {
   const AboutPrepKingScreen({super.key});
+
+  Future<String> _getAppVersion() async {
+    final PackageInfo packageInfo = await PackageInfo.fromPlatform();
+    return '${packageInfo.version} (Build ${packageInfo.buildNumber})';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,24 +37,45 @@ class AboutPrepKingScreen extends StatelessWidget {
                   'assets/images/logo.png',
                   width: 120,
                   height: 120,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.school, size: 100, color: Color(0xFF6C5CE7)),
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.school,
+                    size: 100,
+                    color: Color(0xFF6C5CE7),
+                  ),
                 ),
               ),
             ),
             const SizedBox(height: 32),
             Text(
               "PrepKing",
-              style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.bold, color: const Color(0xFF2D3436)),
+              style: GoogleFonts.poppins(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF2D3436),
+              ),
             ),
             const SizedBox(height: 12),
             Text(
               "A modern learning platform built for students, by educators.",
-              style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey[700], height: 1.5),
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                color: Colors.grey[700],
+                height: 1.5,
+              ),
             ),
             const SizedBox(height: 32),
-            _buildInfoRow("Version", "1.0.0"),
+
+            // Dynamic Version Info
+            FutureBuilder<String>(
+              future: _getAppVersion(),
+              builder: (context, snapshot) {
+                final versionText = snapshot.data ?? "1.0.0";
+                return _buildInfoRow("Version", versionText);
+              },
+            ),
             _buildInfoRow("Made in", "India 🇮🇳"),
             _buildInfoRow("Technology", "Flutter • Firebase • Riverpod"),
+
             const SizedBox(height: 40),
             Container(
               padding: const EdgeInsets.all(16),
@@ -59,12 +86,18 @@ class AboutPrepKingScreen extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.info_outline, color: Colors.grey[700]),
+                  Icon(
+                    Icons.info_outline,
+                    color: Colors.grey[700],
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       "PrepKing is committed to providing a distraction-free, ad-free, and safe learning environment for students across India.",
-                      style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[700]),
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: Colors.grey[700],
+                      ),
                     ),
                   ),
                 ],
@@ -83,11 +116,17 @@ class AboutPrepKingScreen extends StatelessWidget {
         children: [
           Text(
             "$label: ",
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: Colors.grey[700]),
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[700],
+            ),
           ),
           Text(
             value,
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w500, color: const Color(0xFF2D3436)),
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF2D3436),
+            ),
           ),
         ],
       ),

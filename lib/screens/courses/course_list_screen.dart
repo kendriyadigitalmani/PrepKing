@@ -1,4 +1,4 @@
-// lib/screens/course_list_screen.dart
+// lib/screens/courses/course_list_screen.dart
 
 import 'package:animate_do/animate_do.dart';
 import 'package:flutter/material.dart';
@@ -6,39 +6,133 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
+import '../../core/utils/user_preferences.dart';
+import '../../providers/course_providers.dart'; // ← CHANGED: Now uses updated course_providers.dart
 
-import '../../core/services/api_service.dart';
-import '../../providers/user_progress_merged_provider.dart';
-
-/// Provider that returns list of all courses
-final allCoursesProvider = FutureProvider<List<dynamic>>((ref) async {
-  final api = ref.read(apiServiceProvider);
-  final response = await api.get('/course');
-  if (response is Map<String, dynamic> && response['success'] == true) {
-    return (response['data'] as List?) ?? [];
-  }
-  return [];
-});
-
-class CourseListScreen extends ConsumerWidget {
+class CourseListScreen extends ConsumerStatefulWidget {
   const CourseListScreen({super.key});
 
-  // Count total lessons from PHP-serialized content_ids string
+  @override
+  ConsumerState<CourseListScreen> createState() => _CourseListScreenState();
+}
+
+class _CourseListScreenState extends ConsumerState<CourseListScreen> {
+  bool _isPrefsReady = false;
+  bool _isLoadingPrefs = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPreferences();
+  }
+
+  Future<void> _checkPreferences() async {
+    final prefs = UserPreferences();
+    final ready = await prefs.isPreferencesReady();
+    if (mounted) {
+      setState(() {
+        _isPrefsReady = ready;
+        _isLoadingPrefs = false;
+      });
+    }
+  }
+
+  // Count total lessons from PHP-serialized content_ids string (kept for display only)
   int _getTotalContents(Map<String, dynamic> course) {
     final contentIds = course['content_ids'];
-    if (contentIds == null || contentIds is! String) return 0;
+    if (contentIds == null || contentIds is! String || contentIds.trim().isEmpty) {
+      return 0;
+    }
     try {
-      final match = RegExp(r'a:(\d+)').firstMatch(contentIds);
-      return match != null ? int.parse(match.group(1)!) : 0;
+      // Split by comma, trim whitespace, and filter out empty strings
+      final ids = contentIds.split(',').map((id) => id.trim()).where((id) => id.isNotEmpty).toList();
+      return ids.length;
     } catch (e) {
       return 0;
     }
   }
 
+  // UI when Language & Exams are not selected
+  Widget _buildMissingPrefsView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.settings, size: 80, color: const Color(0xFF6C5CE7)),
+            const SizedBox(height: 24),
+            Text(
+              'Please Select Language and Exams',
+              style: GoogleFonts.poppins(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[800],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Go to Settings under Profile to set your Language and Exams.',
+              style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.settings, color: Colors.white),
+              label: Text(
+                'Go to Settings',
+                style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6C5CE7),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+              ),
+              onPressed: () {
+                context.push('/profile/settings').then((_) {
+                  _checkPreferences();
+                });
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final coursesAsync = ref.watch(allCoursesProvider);
-    final userProgressAsync = ref.watch(userWithProgressProvider);
+  Widget build(BuildContext context) {
+    // Show loading only while checking preferences
+    if (_isLoadingPrefs) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF6C5CE7)),
+        ),
+      );
+    }
+
+    // If preferences not ready → show message
+    if (!_isPrefsReady) {
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF6C5CE7),
+          title: Text('Courses', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
+          elevation: 0,
+        ),
+        body: _buildMissingPrefsView(),
+        floatingActionButton: FloatingActionButton(
+          backgroundColor: const Color(0xFF6C5CE7),
+          onPressed: _checkPreferences,
+          child: const Icon(Icons.refresh, color: Colors.white),
+        ),
+      );
+    }
+
+    // Preferences ready → normal course list
+    // CHANGED: Now uses the enhanced courseListProvider from course_providers.dart
+    final coursesAsync = ref.watch(courseListProvider);
 
     return Scaffold(
       body: CustomScrollView(
@@ -47,8 +141,7 @@ class CourseListScreen extends ConsumerWidget {
             expandedHeight: 180,
             pinned: true,
             flexibleSpace: FlexibleSpaceBar(
-              titlePadding:
-              const EdgeInsetsDirectional.only(start: 20, bottom: 16),
+              titlePadding: const EdgeInsetsDirectional.only(start: 20, bottom: 16),
               title: Text(
                 "Courses",
                 style: GoogleFonts.poppins(
@@ -74,9 +167,7 @@ class CourseListScreen extends ConsumerWidget {
             sliver: coursesAsync.when(
               loading: () => const SliverToBoxAdapter(
                 child: Center(
-                  child: CircularProgressIndicator(
-                    color: Color(0xFF6C5CE7),
-                  ),
+                  child: CircularProgressIndicator(color: Color(0xFF6C5CE7)),
                 ),
               ),
               error: (_, __) => SliverToBoxAdapter(
@@ -87,7 +178,7 @@ class CourseListScreen extends ConsumerWidget {
                       const SizedBox(height: 20),
                       Text("No internet connection", style: GoogleFonts.poppins(fontSize: 18)),
                       TextButton(
-                        onPressed: () => ref.refresh(allCoursesProvider),
+                        onPressed: () => ref.refresh(courseListProvider),
                         child: const Text("Retry", style: TextStyle(color: Color(0xFF6C5CE7))),
                       ),
                     ],
@@ -114,28 +205,20 @@ class CourseListScreen extends ConsumerWidget {
                   );
                 }
 
-                // ✅ SAFELY extract user progress — no crash on guest
-                double getProgressForCourse(String courseId) {
-                  // Only if user data loaded successfully
-                  if (userProgressAsync is AsyncData) {
-                    return userProgressAsync.value?.courseProgress[courseId] ?? 0.0;
-                  }
-                  // If loading, error, or not logged in → treat as 0%
-                  return 0.0;
-                }
-
                 return SliverList(
                   delegate: SliverChildBuilderDelegate(
                         (context, index) {
                       final course = courses[index];
-                      final courseId = course['id'].toString();
-                      final progress = getProgressForCourse(courseId);
-                      final totalLessons = _getTotalContents(course);
+
+                      // FIXED: Use backend-provided normalized progress
+                      final double progressPercentage = course['progress_percentage'] as double? ?? 0.0;
+                      final int totalLessons = _getTotalContents(course);
+                      final String displayId = course['id'].toString();
 
                       return FadeInUp(
                         delay: Duration(milliseconds: index * 100),
                         child: Hero(
-                          tag: 'course-hero-$courseId',
+                          tag: 'course-hero-$displayId',
                           child: Container(
                             margin: const EdgeInsets.only(bottom: 16),
                             child: Card(
@@ -143,7 +226,7 @@ class CourseListScreen extends ConsumerWidget {
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(24),
-                                onTap: () => context.push('/courses/detail/$courseId'),
+                                onTap: () => context.push('/courses/detail/$displayId'),
                                 child: Padding(
                                   padding: const EdgeInsets.all(20),
                                   child: Row(
@@ -196,20 +279,20 @@ class CourseListScreen extends ConsumerWidget {
                                                   style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[700]),
                                                 ),
                                                 const Spacer(),
-                                                if (progress > 0)
-                                                  Text(
-                                                    "${(progress * 100).toInt()}% Done",
-                                                    style: GoogleFonts.poppins(
-                                                      fontSize: 14,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: const Color(0xFF6C5CE7),
-                                                    ),
+                                                // Show accurate backend percentage
+                                                Text(
+                                                  "${progressPercentage.toStringAsFixed(0)}% Done",
+                                                  style: GoogleFonts.poppins(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: const Color(0xFF6C5CE7),
                                                   ),
+                                                ),
                                               ],
                                             ),
                                             const SizedBox(height: 12),
                                             LinearProgressIndicator(
-                                              value: progress,
+                                              value: progressPercentage / 100.0, // 0.0 to 1.0
                                               backgroundColor: Colors.grey[300],
                                               valueColor: const AlwaysStoppedAnimation(Color(0xFF6C5CE7)),
                                               minHeight: 7,
@@ -246,8 +329,8 @@ class CourseListScreen extends ConsumerWidget {
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFF6C5CE7),
         onPressed: () {
-          ref.invalidate(allCoursesProvider);
-          ref.invalidate(userWithProgressProvider);
+          _checkPreferences();
+          ref.invalidate(courseListProvider); // ← Now refreshes correct provider
         },
         child: const Icon(Icons.refresh_rounded, color: Colors.white),
       ),

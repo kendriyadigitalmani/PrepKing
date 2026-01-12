@@ -13,5 +13,7 @@ final appSettingsProvider = FutureProvider<AppSettings>((ref) async {
 
   // Fetch app settings using the actual package ID
   final apiService = ref.read(apiServiceProvider);
+
+  // Use the public method that returns the parsed AppSettings model
   return await apiService.getAppSettings(packageId: packageId);
 });

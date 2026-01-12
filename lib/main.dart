@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart'; // ← NEW IMPORT
 
 // ───────── SCREENS ──────────────────────────────────────────────────
 import 'screens/home/home_screen.dart';
@@ -44,7 +45,9 @@ import 'screens/profile/settings_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // 🔥 Firebase initialization has been completely removed from here.
+  // ← NEW: Preserve native splash until Flutter renders the first frame
+  FlutterNativeSplash.preserve(widgetsBinding: WidgetsFlutterBinding.ensureInitialized());
+  // Firebase initialization has been completely removed from here.
   // It is now handled asynchronously inside appInitProvider (triggered from SplashScreen)
   // This ensures the splash animation starts instantly with zero blocking.
   runApp(const ProviderScope(child: PrepKingApp()));
@@ -61,139 +64,211 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/login/email', builder: (_, __) => const EmailLoginScreen()),
       GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
-      ShellRoute(
-        builder: (context, state, child) => MainScaffold(child: child),
-        routes: [
-          GoRoute(
-              path: '/home',
-              pageBuilder: (_, __) => const NoTransitionPage(child: HomeScreen())),
-          GoRoute(
-            path: '/courses',
-            pageBuilder: (_, __) =>
-            const NoTransitionPage(child: CourseListScreen()),
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) => MainScaffold(navigationShell: navigationShell),
+        branches: [
+          StatefulShellBranch(
             routes: [
               GoRoute(
-                path: 'detail/:id',
-                builder: (context, state) {
-                  final idStr = state.pathParameters['id']!;
-                  final id = int.tryParse(idStr);
-                  if (id == null) {
-                    return Scaffold(
-                        body: Center(child: Text('Invalid course ID: $idStr')));
-                  }
-                  return CourseDetailScreen(courseId: id);
-                },
-              ),
-              GoRoute(
-                path: 'content/text',
-                builder: (context, state) =>
-                    TextContentScreen(content: state.extra as Map<String, dynamic>),
-              ),
-              GoRoute(
-                path: 'content/video',
-                builder: (context, state) =>
-                    VideoContentScreen(content: state.extra as Map<String, dynamic>),
-              ),
-              GoRoute(
-                path: 'content/pdf',
-                builder: (context, state) =>
-                    PdfContentScreen(content: state.extra as Map<String, dynamic>),
-              ),
-              GoRoute(
-                path: 'content/quiz',
-                builder: (context, state) =>
-                    QuizContentScreen(content: state.extra as Map<String, dynamic>),
-              ),
-              GoRoute(
-                path: 'content/audio',
-                builder: (context, state) =>
-                    AudioPlayerScreen(content: state.extra as Map<String, dynamic>),
-              ),
-              // ← NEW ROUTE FOR TEXT-TO-SPEECH PLAYER
-              GoRoute(
-                path: 'content/text-audio',
-                builder: (context, state) {
-                  final data = state.extra as Map<String, dynamic>;
-                  return TextAudioPlayerScreen(
-                    title: data['title'] as String,
-                    text: data['text'] as String,
-                  );
-                },
-              ),
-              GoRoute(
-                path: 'content/:courseId',
-                builder: (context, state) {
-                  final idStr = state.pathParameters['courseId']!;
-                  final courseId = int.tryParse(idStr);
-                  if (courseId == null) {
-                    return Scaffold(
-                      body: Center(child: Text('Invalid course ID: "$idStr"')),
-                    );
-                  }
-                  return ContentListScreen(courseId: courseId);
-                },
+                path: '/home',
+                builder: (_, __) => const HomeScreen(),
               ),
             ],
           ),
-          GoRoute(
-              path: '/quizzes',
-              pageBuilder: (_, __) =>
-              const NoTransitionPage(child: QuizzesScreen())),
-          GoRoute(
-            path: '/quizzes/daily',
-            pageBuilder: (_, __) =>
-            const NoTransitionPage(child: DailyQuizzesScreen()),
-          ),
-          GoRoute(
-              path: '/leaderboard',
-              pageBuilder: (_, __) =>
-              const NoTransitionPage(child: LeaderboardScreen())),
-          GoRoute(
-            path: '/profile',
-            pageBuilder: (_, __) =>
-            const NoTransitionPage(child: ProfileScreen()),
+          StatefulShellBranch(
             routes: [
               GoRoute(
-                  path: 'certificates',
-                  builder: (_, __) => const CertificatesScreen()),
+                path: '/courses',
+                builder: (_, __) => const CourseListScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'detail/:id',
+                    builder: (context, state) {
+                      final idStr = state.pathParameters['id']!;
+                      final id = int.tryParse(idStr);
+                      if (id == null) {
+                        return Scaffold(
+                            body: Center(child: Text('Invalid course ID: $idStr')));
+                      }
+                      return CourseDetailScreen(courseId: id);
+                    },
+                  ),
+                  GoRoute(
+                    path: 'content/text',
+                    builder: (context, state) {
+                      final extra = state.extra;
+                      if (extra is! Map<String, dynamic>) {
+                        return const Scaffold(
+                            body: Center(child: Text('Invalid content data')));
+                      }
+                      return TextContentScreen(content: extra);
+                    },
+                  ),
+                  GoRoute(
+                    path: 'content/video',
+                    builder: (context, state) {
+                      final extra = state.extra;
+                      if (extra is! Map<String, dynamic>) {
+                        return const Scaffold(
+                            body: Center(child: Text('Invalid content data')));
+                      }
+                      return VideoContentScreen(content: extra);
+                    },
+                  ),
+                  GoRoute(
+                    path: 'content/pdf',
+                    builder: (context, state) {
+                      final extra = state.extra;
+                      if (extra is! Map<String, dynamic>) {
+                        return const Scaffold(
+                            body: Center(child: Text('Invalid content data')));
+                      }
+                      return PdfContentScreen(content: extra);
+                    },
+                  ),
+                  GoRoute(
+                    path: 'content/quiz',
+                    builder: (context, state) {
+                      final extra = state.extra;
+                      if (extra is! Map<String, dynamic>) {
+                        return const Scaffold(
+                            body: Center(child: Text('Invalid content data')));
+                      }
+                      return QuizContentScreen(content: extra);
+                    },
+                  ),
+                  GoRoute(
+                    path: 'content/audio',
+                    builder: (context, state) {
+                      final extra = state.extra;
+                      if (extra is! Map<String, dynamic>) {
+                        return const Scaffold(
+                            body: Center(child: Text('Invalid content data')));
+                      }
+                      return AudioPlayerScreen(content: extra);
+                    },
+                  ),
+                  // ← NEW ROUTE FOR TEXT-TO-SPEECH PLAYER
+                  GoRoute(
+                    path: 'content/text-audio',
+                    builder: (context, state) {
+                      final extra = state.extra;
+                      if (extra is! Map<String, dynamic>) {
+                        return const Scaffold(
+                            body: Center(child: Text('Invalid content data')));
+                      }
+                      return TextAudioPlayerScreen(
+                        title: extra['title'] as String,
+                        text: extra['text'] as String,
+                      );
+                    },
+                  ),
+                  GoRoute(
+                    path: 'content/:courseId',
+                    builder: (context, state) {
+                      final idStr = state.pathParameters['courseId']!;
+                      final courseId = int.tryParse(idStr);
+                      if (courseId == null) {
+                        return Scaffold(
+                          body: Center(child: Text('Invalid course ID: "$idStr"')),
+                        );
+                      }
+                      return ContentListScreen(courseId: courseId);
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
               GoRoute(
-                  path: 'history', builder: (_, __) => const QuizHistoryScreen()),
+                path: '/quizzes',
+                builder: (_, __) => const QuizzesScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'daily',
+                    builder: (_, __) => const DailyQuizzesScreen(),
+                  ),
+                  GoRoute(
+                      path: 'detail',
+                      builder: (context, state) {
+                        final extra = state.extra;
+                        if (extra is! Map<String, dynamic>) {
+                          return const Scaffold(
+                              body: Center(child: Text('Invalid quiz data')));
+                        }
+                        return QuizDetailScreen(quiz: extra);
+                      }),
+                  GoRoute(path: 'instant-player', builder: (context, state) {
+                    final extra = state.extra;
+                    if (extra is! Map<String, dynamic>) {
+                      return const Scaffold(body: Center(child: Text('Invalid data')));
+                    }
+                    return InstantQuizPlayerScreen(
+                        quiz: extra['quiz'], attemptId: extra['attempt_id']);
+                  }),
+                  GoRoute(path: 'standard-player', builder: (context, state) {
+                    final extra = state.extra;
+                    if (extra is! Map<String, dynamic>) {
+                      return const Scaffold(body: Center(child: Text('Invalid data')));
+                    }
+                    return StandardQuizPlayerScreen(
+                        quiz: extra['quiz'], attemptId: extra['attempt_id']);
+                  }),
+                  GoRoute(
+                      path: 'result',
+                      builder: (context, state) {
+                        final extra = state.extra;
+                        if (extra is! Map<String, dynamic>) {
+                          return const Scaffold(
+                              body: Center(child: Text('Invalid result data')));
+                        }
+                        return QuizResultScreen(result: extra);
+                      }),
+                ],
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
               GoRoute(
-                  path: 'edit', builder: (_, __) => const EditProfileScreen()),
+                path: '/leaderboard',
+                builder: (_, __) => const LeaderboardScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
               GoRoute(
-                  path: 'settings',
-                  builder: (_, __) => const SettingsScreen()),
-              GoRoute(path: 'coins', builder: (_, __) => const CoinStoreScreen()),
-              GoRoute(path: 'help', builder: (_, __) => const HelpSupportScreen()),
-              GoRoute(path: 'about', builder: (_, __) => const AboutPrepKingScreen()),
+                path: '/profile',
+                builder: (_, __) => const ProfileScreen(),
+                routes: [
+                  GoRoute(
+                      path: 'certificates',
+                      builder: (_, __) => const CertificatesScreen()),
+                  GoRoute(
+                      path: 'history', builder: (_, __) => const QuizHistoryScreen()),
+                  GoRoute(
+                      path: 'edit', builder: (_, __) => const EditProfileScreen()),
+                  GoRoute(
+                      path: 'settings',
+                      builder: (_, __) => const SettingsScreen()),
+                  GoRoute(path: 'coins', builder: (_, __) => const CoinStoreScreen()),
+                  GoRoute(path: 'help', builder: (_, __) => const HelpSupportScreen()),
+                  GoRoute(path: 'about', builder: (_, __) => const AboutPrepKingScreen()),
+                ],
+              ),
             ],
           ),
         ],
       ),
       // ───────── Standalone routes ────────────────────────────────────────
       GoRoute(
-          path: '/quizzes/detail',
-          builder: (context, state) =>
-              QuizDetailScreen(quiz: state.extra as Map<String, dynamic>)),
-      GoRoute(
           path: '/q/:slug',
           builder: (context, state) => Scaffold(
               body: Center(
                   child: Text('Loading quiz: ${state.pathParameters['slug']}')))),
-      GoRoute(path: '/quizzes/instant-player', builder: (context, state) {
-        final extra = state.extra as Map<String, dynamic>;
-        return InstantQuizPlayerScreen(
-            quiz: extra['quiz'], attemptId: extra['attempt_id']);
-      }),
-      GoRoute(path: '/quizzes/standard-player', builder: (context, state) {
-        final extra = state.extra as Map<String, dynamic>;
-        return StandardQuizPlayerScreen(
-            quiz: extra['quiz'], attemptId: extra['attempt_id']);
-      }),
-      GoRoute(
-          path: '/quizzes/result',
-          builder: (context, state) =>
-              QuizResultScreen(result: state.extra as Map<String, dynamic>)),
       GoRoute(path: '/quiz-review', builder: (context, state) {
         final extra = state.extra as Map<String, dynamic>?;
         final attemptId = extra?['attemptId'] ?? extra?['attempt_id'] ?? 0;
@@ -236,7 +311,6 @@ final routerProvider = Provider<GoRouter>((ref) {
 // ───────── APP & SCAFFOLD ───────────────────────────────────────────
 class PrepKingApp extends ConsumerWidget {
   const PrepKingApp({super.key});
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
@@ -253,27 +327,18 @@ class PrepKingApp extends ConsumerWidget {
 }
 
 class MainScaffold extends ConsumerStatefulWidget {
-  final Widget child;
-  const MainScaffold({super.key, required this.child});
-
+  final StatefulNavigationShell navigationShell;
+  const MainScaffold({super.key, required this.navigationShell});
   @override
   ConsumerState<MainScaffold> createState() => _MainScaffoldState();
 }
 
 class _MainScaffoldState extends ConsumerState<MainScaffold> {
-  int _currentIndex = 0;
-  final List<String> _locations = [
-    '/home',
-    '/courses',
-    '/quizzes',
-    '/leaderboard',
-    '/profile'
-  ];
   DateTime? _lastBackPressTime;
 
   Future<bool> _onWillPop() async {
     final now = DateTime.now();
-    if (_currentIndex != 0) return true;
+    if (widget.navigationShell.currentIndex != 0) return true;
     if (_lastBackPressTime == null ||
         now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
       _lastBackPressTime = now;
@@ -290,29 +355,21 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   @override
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).uri.toString();
-    // Sync bottom navigation index with current route
-    final index = _locations.indexWhere((path) => location.startsWith(path));
-    if (index != -1 && index != _currentIndex) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(() => _currentIndex = index);
-        }
-      });
-    }
-    // Hide bottom bar when viewing the audio player screen
-    final hideBottomBar = location.contains('/content/audio');
+
+    // FIXED: Hide bottom bar on ALL content screens (audio, video, pdf, text, etc.)
+    // Now correctly matches routes like /courses/content/audio, /courses/content/pdf, etc.
+    final hideBottomBar = location.contains('/content/');
 
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(
-        body: widget.child,
+        body: widget.navigationShell,
         bottomNavigationBar: hideBottomBar
             ? null
             : BottomNavigationBar(
-          currentIndex: _currentIndex,
+          currentIndex: widget.navigationShell.currentIndex,
           onTap: (i) {
-            setState(() => _currentIndex = i);
-            context.go(_locations[i]);
+            widget.navigationShell.goBranch(i);
           },
           type: BottomNavigationBarType.fixed,
           selectedItemColor: const Color(0xFF6C5CE7),

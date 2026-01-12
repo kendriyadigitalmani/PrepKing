@@ -1,5 +1,4 @@
 // lib/screens/login_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,7 +6,6 @@ import 'package:animate_do/animate_do.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:url_launcher/url_launcher.dart';
-
 import '../core/constants/api_constants.dart';
 import '../core/utils/user_preferences.dart';
 import '../core/services/api_service.dart';
@@ -30,7 +28,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     try {
       final googleUser = await GoogleSignIn().signIn();
-
       if (googleUser == null) {
         setState(() => _isSigningIn = false);
         return;
@@ -128,7 +125,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               const SizedBox(height: 8),
               GestureDetector(
                 onTap: () async {
-                  //const url = 'https://kendriyadigital.blogspot.com/2025/12/privacy-policy-for-prepking-online.html'; // ← REPLACE WITH YOUR ACTUAL PRIVACY POLICY URL
                   if (await canLaunchUrl(Uri.parse(ApiConstants.privacyUrl))) {
                     await launchUrl(Uri.parse(ApiConstants.privacyUrl), mode: LaunchMode.externalApplication);
                   }
@@ -172,41 +168,55 @@ Future<void> handlePostAuthentication(
   }
 
   final apiService = ref.read(apiServiceProvider);
-  final response = await apiService.get('/user', query: {'firebaseid': firebaseId});
-  final userData = response['data'] as Map<String, dynamic>?;
   final prefs = UserPreferences();
 
+  // First: Try to fetch existing user
+  final getResponse = await apiService.get('/user', query: {'firebaseid': firebaseId});
+
+  Map<String, dynamic>? userData = getResponse['data'] as Map<String, dynamic>?;
+
   if (userData != null) {
-    // Existing user
+    // Existing user → use fetched data
     await prefs.saveUserData(
       userId: userData['id'] as int,
-      firebaseId: userData['firebase_id'] as String,
+      firebaseId: firebaseId,
       name: userData['name'] as String,
       email: userData['email'] as String,
       isFirstTime: false,
       isGuest: false,
     );
   } else {
-    // New user — create in backend
-    final newUserResponse = await apiService.post('/user', {
+    // New user → create in backend
+    final createPayload = {
       'firebase_id': firebaseId,
-      'name': userCredential.user?.displayName ?? 'User',
+      'name': userCredential.user?.displayName ?? 'PrepKing User',
       'email': userCredential.user?.email ?? '',
-      'role': 'guest',
-    });
-    final createdUser = newUserResponse['data'] as Map<String, dynamic>;
+      'profile_picture': userCredential.user?.photoURL,
+      'role': 'student',
+    };
+
+    await apiService.post('/user', createPayload);
+
+    // CRITICAL FIX: After creation, fetch full user data again
+    // Because POST /user only returns {success: true, id: ...} without full 'data'
+    final fetchAfterCreate = await apiService.get('/user', query: {'firebaseid': firebaseId});
+    userData = fetchAfterCreate['data'] as Map<String, dynamic>?;
+
+    if (userData == null) {
+      throw Exception('Failed to retrieve user data after creation');
+    }
+
     await prefs.saveUserData(
-      userId: createdUser['id'] as int,
-      firebaseId: createdUser['firebase_id'] as String,
-      name: createdUser['name'] as String,
-      email: createdUser['email'] as String,
+      userId: userData['id'] as int,
+      firebaseId: firebaseId,
+      name: userData['name'] as String,
+      email: userData['email'] as String,
       isFirstTime: true,
       isGuest: false,
     );
   }
 
-  // ── CRITICAL FIX: Invalidate all user-related providers after login
-  // This ensures fresh data is fetched and no stale data from previous session remains
+  // Invalidate and refresh all user-related providers
   ref.read(refreshUserDataProvider)();
 
   if (context.mounted) {
@@ -230,14 +240,13 @@ class _EmailLoginScreenState extends ConsumerState<EmailLoginScreen> {
 
   Future<void> _signInWithEmail() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _isLoading = true);
+
     try {
       final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
-
       await handlePostAuthentication(context, ref, credential);
     } on FirebaseAuthException catch (e) {
       String message;

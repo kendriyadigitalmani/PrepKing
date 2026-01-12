@@ -3,25 +3,28 @@ import 'package:animate_do/animate_do.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:rxdart/rxdart.dart';
+import '../../../core/services/api_service.dart';
+import '../../../providers/user_progress_merged_provider.dart';
 
-class AudioPlayerScreen extends StatefulWidget {
+class AudioPlayerScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> content;
   const AudioPlayerScreen({super.key, required this.content});
 
   @override
-  State<AudioPlayerScreen> createState() => _AudioPlayerScreenState();
+  ConsumerState<AudioPlayerScreen> createState() => _AudioPlayerScreenState();
 }
 
-class _AudioPlayerScreenState extends State<AudioPlayerScreen> with TickerProviderStateMixin {
+class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
+    with TickerProviderStateMixin {
   late AudioPlayer _audioPlayer;
   late AnimationController _pulseController;
   double _playbackSpeed = 1.0;
   double _volume = 1.0;
-  bool _isCompleted = false;
 
   @override
   void initState() {
@@ -78,6 +81,43 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> with TickerProvid
     return '$minutes:$seconds';
   }
 
+  /// Updated to use the correct 'course_id' key (instead of outdated 'course_quiz_id')
+  /// and added proper null-safety + int casting like in TextContentScreen
+  Future<void> _recordProgress({required bool completed}) async {
+    final userAsync = ref.read(userWithProgressProvider);
+    final user = userAsync.value;
+    if (user == null) return;
+
+    final int? contentId = widget.content['id'] as int?;
+    final int? courseId = widget.content['course_id'] as int?; // ← FIXED
+
+    if (contentId == null || courseId == null) {
+      debugPrint('Invalid contentId or courseId for progress update');
+      return;
+    }
+
+    try {
+      final api = ref.read(apiServiceProvider);
+      await api.put(
+        '/content/$contentId/progress',
+        {
+          'completed': completed,
+          'time_spent': 30,
+        },
+        query: {
+          'userid': user.id.toString(),
+          'courseid': courseId.toString(),
+          'contentid': contentId.toString(),
+        },
+      );
+
+      // Refresh merged user progress – now works correctly because course_id is consistent
+      ref.invalidate(userWithProgressProvider);
+    } catch (e) {
+      debugPrint('Error recording audio progress: $e');
+    }
+  }
+
   Future<bool> _onBackPressed() async {
     final result = await showDialog<bool>(
       context: context,
@@ -94,7 +134,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> with TickerProvid
           TextButton(
             onPressed: () async {
               await _recordProgress(completed: true);
-              Navigator.pop(context, true);
+              if (mounted) Navigator.pop(context, true);
             },
             child: const Text("Completed"),
           ),
@@ -108,10 +148,6 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> with TickerProvid
     return result ?? false;
   }
 
-  Future<void> _recordProgress({required bool completed}) async {
-    // CALL YOUR API HERE
-  }
-
   @override
   Widget build(BuildContext context) {
     final String title = widget.content['title'] ?? 'Audio Lesson';
@@ -120,6 +156,8 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> with TickerProvid
     return WillPopScope(
       onWillPop: _onBackPressed,
       child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBody: true,
         body: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -129,274 +167,323 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> with TickerProvid
             ),
           ),
           child: SafeArea(
-            child: SingleChildScrollView(  // Added for safety on very small screens
-              physics: const BouncingScrollPhysics(),
-              child: Column(
-                children: [
-                  // App Bar
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_downward, color: Colors.white, size: 28),
-                          onPressed: () => GoRouter.of(context).pop(),
-                        ),
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: GoogleFonts.poppins(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
+            bottom: false,
+            child: Stack(
+              children: [
+                SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.only(bottom: 120),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.arrow_downward,
+                                  color: Colors.white, size: 28),
+                              onPressed: () => context.pop(),
                             ),
-                            textAlign: TextAlign.center,
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            const SizedBox(width: 48),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      FadeIn(
+                        child: ScaleTransition(
+                          scale: Tween<double>(begin: 0.95, end: 1.05)
+                              .animate(_pulseController),
+                          child: Container(
+                            width: 240,
+                            height: 240,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white.withOpacity(0.15),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.25),
+                                  blurRadius: 24,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.headphones_rounded,
+                              size: 96,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 48),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20), // Added small top spacing for balance
-
-                  // Album Art / Visualizer (Reduced size)
-                  FadeIn(
-                    child: ScaleTransition(
-                      scale: Tween<double>(begin: 0.95, end: 1.05).animate(_pulseController),
-                      child: Container(
-                        width: 240,  // Reduced from 280
-                        height: 240, // Reduced from 280
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white.withOpacity(0.15),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.25),
-                              blurRadius: 24,
-                              offset: const Offset(0, 8),
+                      ),
+                      const SizedBox(height: 40),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Column(
+                          children: [
+                            Text(
+                              title,
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Course Audio Lesson',
+                              style: GoogleFonts.poppins(
+                                color: Colors.white70,
+                                fontSize: 16,
+                              ),
                             ),
                           ],
                         ),
-                        child: const Icon(
-                          Icons.headphones_rounded,
-                          size: 96,  // Reduced from 120
-                          color: Colors.white,
-                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 40), // Reduced from 60
-
-                  // Title & Description
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: Column(
-                      children: [
-                        Text(
-                          title,
-                          style: GoogleFonts.poppins(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
+                      const SizedBox(height: 16),
+                      PopupMenuButton<double>(
+                        initialValue: _playbackSpeed,
+                        onSelected: (speed) {
+                          setState(() => _playbackSpeed = speed);
+                          _audioPlayer.setSpeed(speed);
+                        },
+                        itemBuilder: (context) => [1, 1.25, 1.5, 2, 3, 4]
+                            .map((e) => PopupMenuItem(
+                          value: e.toDouble(),
+                          child: Text("${e}x"),
+                        ))
+                            .toList(),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            color: Colors.white.withOpacity(0.2),
                           ),
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Course Audio Lesson',
-                          style: GoogleFonts.poppins(
-                            color: Colors.white70,
-                            fontSize: 16,
+                          child: Text(
+                            "${_playbackSpeed}x",
+                            style: GoogleFonts.poppins(color: Colors.white),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16), // Reduced from 20
-
-                  // Speed Selector
-                  PopupMenuButton<double>(
-                    initialValue: _playbackSpeed,
-                    onSelected: (speed) {
-                      setState(() => _playbackSpeed = speed);
-                      _audioPlayer.setSpeed(speed);
-                    },
-                    itemBuilder: (context) => [1, 1.25, 1.5, 2, 3, 4]
-                        .map((e) => PopupMenuItem(
-                      value: e.toDouble(),
-                      child: Text("${e}x"),
-                    ))
-                        .toList(),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        color: Colors.white.withOpacity(0.2),
                       ),
-                      child: Text(
-                        "${_playbackSpeed}x",
-                        style: GoogleFonts.poppins(color: Colors.white),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 28), // Reduced from 40
-
-                  // Seek Bar & Time
-                  if (audioUrl != null && audioUrl.isNotEmpty)
-                    StreamBuilder<PositionData>(
-                      stream: _positionDataStream,
-                      builder: (context, snapshot) {
-                        final positionData = snapshot.data ??
-                            PositionData(Duration.zero, Duration.zero, Duration.zero);
-                        final duration = positionData.duration;
-                        final position = positionData.position;
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 32),
-                          child: Column(
-                            children: [
-                              SliderTheme(
-                                data: SliderTheme.of(context).copyWith(
-                                  trackHeight: 4,
-                                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-                                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
-                                  activeTrackColor: Colors.white,
-                                  inactiveTrackColor: Colors.white30,
-                                  thumbColor: Colors.white,
-                                  overlayColor: Colors.white.withOpacity(0.2),
-                                ),
-                                child: Slider(
-                                  min: 0.0,
-                                  max: duration.inMilliseconds.toDouble(),
-                                  value: position.inMilliseconds
-                                      .toDouble()
-                                      .clamp(0.0, duration.inMilliseconds.toDouble()),
-                                  onChanged: (value) {
-                                    _audioPlayer.seek(Duration(milliseconds: value.toInt()));
-                                  },
-                                ),
-                              ),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      const SizedBox(height: 28),
+                      if (audioUrl != null && audioUrl.isNotEmpty)
+                        StreamBuilder<PositionData>(
+                          stream: _positionDataStream,
+                          builder: (context, snapshot) {
+                            final positionData = snapshot.data ??
+                                PositionData(Duration.zero, Duration.zero,
+                                    Duration.zero);
+                            final duration = positionData.duration;
+                            final position = positionData.position;
+                            return Padding(
+                              padding:
+                              const EdgeInsets.symmetric(horizontal: 32),
+                              child: Column(
                                 children: [
-                                  Text(
-                                    _formatDuration(position),
-                                    style: GoogleFonts.poppins(color: Colors.white70, fontSize: 14),
+                                  SliderTheme(
+                                    data: SliderTheme.of(context).copyWith(
+                                      trackHeight: 4,
+                                      thumbShape: const RoundSliderThumbShape(
+                                          enabledThumbRadius: 8),
+                                      overlayShape:
+                                      const RoundSliderOverlayShape(
+                                          overlayRadius: 16),
+                                      activeTrackColor: Colors.white,
+                                      inactiveTrackColor: Colors.white30,
+                                      thumbColor: Colors.white,
+                                      overlayColor:
+                                      Colors.white.withOpacity(0.2),
+                                    ),
+                                    child: Slider(
+                                      min: 0.0,
+                                      max: duration.inMilliseconds.toDouble(),
+                                      value: position.inMilliseconds
+                                          .toDouble()
+                                          .clamp(0.0,
+                                          duration.inMilliseconds.toDouble()),
+                                      onChanged: (value) {
+                                        _audioPlayer.seek(Duration(
+                                            milliseconds: value.toInt()));
+                                      },
+                                    ),
                                   ),
-                                  Text(
-                                    _formatDuration(duration),
-                                    style: GoogleFonts.poppins(color: Colors.white70, fontSize: 14),
+                                  Row(
+                                    mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        _formatDuration(position),
+                                        style: GoogleFonts.poppins(
+                                            color: Colors.white70,
+                                            fontSize: 14),
+                                      ),
+                                      Text(
+                                        _formatDuration(duration),
+                                        style: GoogleFonts.poppins(
+                                            color: Colors.white70,
+                                            fontSize: 14),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
-                            ],
+                            );
+                          },
+                        )
+                      else
+                        const Text(
+                          "Audio file not available",
+                          style: TextStyle(color: Colors.white70, fontSize: 16),
+                        ),
+                      const SizedBox(height: 20),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.volume_down, color: Colors.white),
+                            Expanded(
+                              child: Slider(
+                                min: 0,
+                                max: 1,
+                                value: _volume,
+                                onChanged: (value) {
+                                  setState(() => _volume = value);
+                                  _audioPlayer.setVolume(value);
+                                },
+                              ),
+                            ),
+                            const Icon(Icons.volume_up, color: Colors.white),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          IconButton(
+                            iconSize: 40,
+                            color: Colors.white70,
+                            icon: const Icon(Icons.skip_previous_rounded),
+                            onPressed: () {},
+                          ),
+                          const SizedBox(width: 32),
+                          StreamBuilder<PlayerState>(
+                            stream: _audioPlayer.playerStateStream,
+                            builder: (context, snapshot) {
+                              final playerState = snapshot.data;
+                              final processingState =
+                                  playerState?.processingState;
+                              final playing = playerState?.playing ?? false;
+                              if (processingState == ProcessingState.loading ||
+                                  processingState == ProcessingState.buffering) {
+                                return const SizedBox(
+                                  width: 72,
+                                  height: 72,
+                                  child: CircularProgressIndicator(
+                                      color: Colors.white, strokeWidth: 6),
+                                );
+                              }
+                              return BounceInDown(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    if (playing) {
+                                      _audioPlayer.pause();
+                                    } else {
+                                      _audioPlayer.play();
+                                    }
+                                  },
+                                  child: Container(
+                                    width: 72,
+                                    height: 72,
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Colors.white,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black26,
+                                          blurRadius: 20,
+                                          offset: Offset(0, 8),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Icon(
+                                      playing
+                                          ? Icons.pause_rounded
+                                          : Icons.play_arrow_rounded,
+                                      size: 44,
+                                      color: const Color(0xFF6C5CE7),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(width: 32),
+                          IconButton(
+                            iconSize: 40,
+                            color: Colors.white70,
+                            icon: const Icon(Icons.skip_next_rounded),
+                            onPressed: () {},
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 100),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  left: 20,
+                  right: 20,
+                  bottom: 20 + MediaQuery.of(context).padding.bottom,
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        await _recordProgress(completed: true);
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content:
+                            Text("Audio lesson marked as completed! 🎉"),
+                            backgroundColor: Colors.green,
                           ),
                         );
                       },
-                    )
-                  else
-                    const Text(
-                      "Audio file not available",
-                      style: TextStyle(color: Colors.white70, fontSize: 16),
-                    ),
-
-                  const SizedBox(height: 20),
-
-                  // Volume Control
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.volume_down, color: Colors.white),
-                        Expanded(
-                          child: Slider(
-                            min: 0,
-                            max: 1,
-                            value: _volume,
-                            onChanged: (value) {
-                              setState(() => _volume = value);
-                              _audioPlayer.setVolume(value);
-                            },
-                          ),
+                      icon: const Icon(Icons.check_circle_outline, size: 28),
+                      label: Text(
+                        "Mark as Completed",
+                        style: GoogleFonts.poppins(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
                         ),
-                        const Icon(Icons.volume_up, color: Colors.white),
-                      ],
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        elevation: 8,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 28), // Reduced from 40
-
-                  // Playback Controls
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        iconSize: 40,
-                        color: Colors.white70,
-                        icon: const Icon(Icons.skip_previous_rounded),
-                        onPressed: () {},
-                      ),
-                      const SizedBox(width: 32),
-                      StreamBuilder<PlayerState>(
-                        stream: _audioPlayer.playerStateStream,
-                        builder: (context, snapshot) {
-                          final playerState = snapshot.data;
-                          final processingState = playerState?.processingState;
-                          final playing = playerState?.playing ?? false;
-                          if (processingState == ProcessingState.loading ||
-                              processingState == ProcessingState.buffering) {
-                            return const SizedBox(
-                              width: 72,
-                              height: 72,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 6),
-                            );
-                          }
-                          return BounceInDown(
-                            child: GestureDetector(
-                              onTap: () {
-                                if (playing) {
-                                  _audioPlayer.pause();
-                                } else {
-                                  _audioPlayer.play();
-                                }
-                              },
-                              child: Container(
-                                width: 72,
-                                height: 72,
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.white,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black26,
-                                      blurRadius: 20,
-                                      offset: Offset(0, 8),
-                                    ),
-                                  ],
-                                ),
-                                child: Icon(
-                                  playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                  size: 44,
-                                  color: const Color(0xFF6C5CE7),
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(width: 32),
-                      IconButton(
-                        iconSize: 40,
-                        color: Colors.white70,
-                        icon: const Icon(Icons.skip_next_rounded),
-                        onPressed: () {},
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 16), // Replaced bottom Spacer()
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

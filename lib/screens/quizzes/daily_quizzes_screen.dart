@@ -1,10 +1,12 @@
-// lib/screens/quizzes/daily_quizzes_screen.dart — FINAL VERSION WITH NORMALIZATION FIX
+// lib/screens/quizzes/daily_quizzes_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
+
 import '../../core/services/api_service.dart';
+import '../../core/utils/user_preferences.dart'; // ← NEW IMPORT
 
 /// Provider for fetching Daily Quizzes
 /// Endpoint: https://quizard.in/api_002.php/saved_quiz?type=quiz_daily
@@ -27,8 +29,107 @@ class DailyQuizzesScreen extends ConsumerStatefulWidget {
 }
 
 class _DailyQuizzesScreenState extends ConsumerState<DailyQuizzesScreen> {
+  bool _isPrefsReady = false;
+  bool _isLoadingPrefs = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPreferences();
+  }
+
+  Future<void> _checkPreferences() async {
+    final prefs = UserPreferences();
+    final ready = await prefs.isPreferencesReady();
+
+    if (mounted) {
+      setState(() {
+        _isPrefsReady = ready;
+        _isLoadingPrefs = false;
+      });
+    }
+  }
+
+  // UI when Language & Exams are not selected
+  Widget _buildMissingPrefsView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.settings, size: 80, color: const Color(0xFF6C5CE7)),
+            const SizedBox(height: 24),
+            Text(
+              'Please Select Language and Exams',
+              style: GoogleFonts.poppins(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[800],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Go to Settings under Profile to set your Language and Exams.',
+              style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.settings, color: Colors.white),
+              label: Text(
+                'Go to Settings',
+                style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6C5CE7),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+              ),
+              onPressed: () {
+                context.push('/profile/settings').then((_) {
+                  // Re-check preferences when returning from settings
+                  _checkPreferences();
+                });
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Show loading while checking preferences
+    if (_isLoadingPrefs) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF6C5CE7)),
+        ),
+      );
+    }
+
+    // If preferences not ready → show message
+    if (!_isPrefsReady) {
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF6C5CE7),
+          title: Text('Daily Quizzes', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
+          elevation: 0,
+        ),
+        body: _buildMissingPrefsView(),
+        floatingActionButton: FloatingActionButton(
+          backgroundColor: const Color(0xFF6C5CE7),
+          onPressed: _checkPreferences,
+          child: const Icon(Icons.refresh, color: Colors.white),
+        ),
+      );
+    }
+
+    // Preferences ready → normal daily quizzes list
     final quizzesAsync = ref.watch(dailyQuizzesProvider);
 
     return Scaffold(
@@ -112,12 +213,10 @@ class _DailyQuizzesScreenState extends ConsumerState<DailyQuizzesScreen> {
                     ),
                   );
                 }
-
                 return SliverList(
                   delegate: SliverChildBuilderDelegate(
                         (context, index) {
                       final quiz = quizzes[index];
-
                       // ✅ Robust Instant Quiz Detection (for list UI only)
                       final bool isInstant = () {
                         final value = quiz['isInstantQuiz'] ?? quiz['instantquiz'];
@@ -130,7 +229,6 @@ class _DailyQuizzesScreenState extends ConsumerState<DailyQuizzesScreen> {
                         final type = quiz['type']?.toString().trim();
                         return type == 'quiz_daily';
                       }();
-
                       // Safe difficulty handling
                       final String difficultyText = () {
                         final raw = quiz['difficulty'];
@@ -143,7 +241,6 @@ class _DailyQuizzesScreenState extends ConsumerState<DailyQuizzesScreen> {
                         return diff[0].toUpperCase() +
                             diff.substring(1).toLowerCase();
                       }();
-
                       return Container(
                         margin: const EdgeInsets.only(bottom: 16),
                         child: Card(
@@ -157,8 +254,8 @@ class _DailyQuizzesScreenState extends ConsumerState<DailyQuizzesScreen> {
                             onTap: () {
                               final Map<String, dynamic> normalizedQuiz = {
                                 ...quiz,
-                                'isInstantQuiz': 1,     // Force instant behavior
-                                'instantquiz': 1,       // Backward compatibility
+                                'isInstantQuiz': 1, // Force instant behavior
+                                'instantquiz': 1, // Backward compatibility
                                 // 'type' remains 'quiz_daily' if needed elsewhere
                               };
                               context.push('/quizzes/detail', extra: normalizedQuiz);
@@ -264,6 +361,14 @@ class _DailyQuizzesScreenState extends ConsumerState<DailyQuizzesScreen> {
             ),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: const Color(0xFF6C5CE7),
+        onPressed: () {
+          _checkPreferences(); // Re-check prefs on refresh
+          ref.invalidate(dailyQuizzesProvider);
+        },
+        child: const Icon(Icons.refresh_rounded, color: Colors.white),
       ),
     );
   }

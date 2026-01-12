@@ -1,15 +1,39 @@
-// lib/core/services/api_service.dart
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/app_settings.dart';
 import '../constants/api_constants.dart';
+import '../utils/current_user_cache.dart';
+import '../utils/user_preferences.dart';
+
+// NEW: Custom exception with optional status code for better error handling
+class ApiException implements Exception {
+  final String message;
+  final int? statusCode;
+  ApiException(this.message, {this.statusCode});
+  @override
+  String toString() => statusCode != null
+      ? 'ApiException($statusCode): $message'
+      : 'ApiException: $message';
+}
 
 final apiServiceProvider = Provider((ref) => ApiService());
 
 class ApiService {
   late final Dio _dio;
+
+  // List of endpoints that should NOT receive the userid parameter
+  final _skipUserIdPaths = [
+    '/login',
+    '/register',
+    '/appsettings',
+    '/firebase_setting',
+    '/version',
+    '/exam/all',
+    '/language/all',
+    '/class',
+  ];
 
   ApiService() {
     _dio = Dio(BaseOptions(
@@ -20,18 +44,40 @@ class ApiService {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      validateStatus: (status) => status! < 500,
+      validateStatus: (status) => status != null && status >= 200 && status < 500,
     ));
 
-    // 🔒 SECURITY FIX: Disable logging of request/response bodies in debug mode
-    // This prevents accidental leakage of sensitive data (emails, firebase IDs, tokens, etc.)
-    // which is a common reason for Google Play Store compliance rejections.
+    // SELECTIVE userid injection
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          int? userId;
+          userId = CurrentUserCache.userId;
+          if (userId == null) {
+            userId = await UserPreferences().getUserId();
+          }
+
+          if (userId != null &&
+              !_skipUserIdPaths.any((skipPath) => options.path.startsWith(skipPath))) {
+            options.queryParameters ??= {};
+            options.queryParameters['userid'] = userId.toString();
+          }
+
+          if (kDebugMode) {
+            debugPrint('API URL → ${options.uri}');
+          }
+          return handler.next(options);
+        },
+      ),
+    );
+
+    // Optional: Keep minimal logging (without sensitive bodies)
     if (kDebugMode) {
       _dio.interceptors.add(LogInterceptor(
         request: true,
         requestHeader: true,
-        requestBody: false, // ← Disabled to avoid logging sensitive payloads
-        responseBody: false, // ← Disabled to avoid logging personal data
+        requestBody: false,
+        responseBody: false,
         responseHeader: false,
         error: true,
         logPrint: (obj) => debugPrint("API → $obj"),
@@ -40,11 +86,20 @@ class ApiService {
   }
 
   // ==================== App Settings ====================
-  /// Fetches app settings from the server (used for version checking & forced updates)
-  Future<AppSettings> getAppSettings({required String packageId}) async {
+  Future<Map<String, dynamic>> getAppSettingsRaw({required String packageId}) async {
     try {
       final response = await get('/appsettings', query: {'packageid': packageId});
-      return AppSettings.fromJson(response);
+      return response;
+    } catch (e) {
+      debugPrint('getAppSettingsRaw error: $e');
+      rethrow;
+    }
+  }
+
+  Future<AppSettings> getAppSettings({required String packageId}) async {
+    try {
+      final rawResponse = await getAppSettingsRaw(packageId: packageId);
+      return AppSettings.fromJson(rawResponse);
     } catch (e) {
       debugPrint('getAppSettings error: $e');
       rethrow;
@@ -71,7 +126,6 @@ class ApiService {
         Map<String, dynamic>? query,
       }) async {
     try {
-      // Body is NOT logged due to LogInterceptor settings above
       debugPrint('POST → $endpoint');
       final response = await _dio.post(
         endpoint,
@@ -86,9 +140,17 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> put(String endpoint, Map<String, dynamic> data) async {
+  Future<Map<String, dynamic>> put(
+      String endpoint,
+      Map<String, dynamic> data, {
+        Map<String, dynamic>? query,
+      }) async {
     try {
-      final response = await _dio.put(endpoint, data: data);
+      final response = await _dio.put(
+        endpoint,
+        queryParameters: query?..map((k, v) => MapEntry(k, v.toString())),
+        data: data,
+      );
       return _handleResponse(response);
     } catch (e) {
       debugPrint('PUT Error [$endpoint]: $e');
@@ -96,9 +158,15 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> delete(String endpoint) async {
+  Future<Map<String, dynamic>> delete(
+      String endpoint, {
+        Map<String, dynamic>? query,
+      }) async {
     try {
-      final response = await _dio.delete(endpoint);
+      final response = await _dio.delete(
+        endpoint,
+        queryParameters: query?..map((k, v) => MapEntry(k, v.toString())),
+      );
       return _handleResponse(response);
     } catch (e) {
       debugPrint('DELETE Error [$endpoint]: $e');
@@ -184,12 +252,53 @@ class ApiService {
     return await put('/quiz_attempt/$attemptId', payload);
   }
 
+  // ==================== User Preferences Update ====================
+  Future<Map<String, dynamic>> updateUserLanguage(int userId, int languageId) async {
+    try {
+      return await put('/user/$userId', {'language_id': languageId});
+    } catch (e) {
+      debugPrint('updateUserLanguage error: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> updateUserExams(int userId, List<int> examIds) async {
+    try {
+      return await put('/user/$userId', {'exam_ids': examIds});
+    } catch (e) {
+      debugPrint('updateUserExams error: $e');
+      rethrow;
+    }
+  }
+
   // ==================== Central Response Handler ====================
   Map<String, dynamic> _handleResponse(Response response) {
     final method = response.requestOptions.method;
     final path = response.requestOptions.path;
     final statusCode = response.statusCode;
+
     debugPrint('API SUCCESS: [$method] $path → $statusCode');
+
+    // === NEW: Print RAW response body exactly as received ===
+    if (kDebugMode) {
+      debugPrint('=== RAW RESPONSE START ===');
+      final rawData = response.data;
+      if (rawData is String) {
+        debugPrint(rawData.isEmpty ? '(empty string)' : rawData);
+      } else if (rawData is List<int>) {
+        // For binary data (rare in JSON APIs)
+        debugPrint('<binary data, length: ${rawData.length}>');
+      } else {
+        // Try to pretty-print if possible
+        try {
+          debugPrint(const JsonEncoder.withIndent('  ').convert(rawData));
+        } catch (_) {
+          debugPrint(rawData.toString());
+        }
+      }
+      debugPrint('=== RAW RESPONSE END ===');
+    }
+    // ======================================================
 
     dynamic data = response.data;
     if (data is String) {
@@ -197,22 +306,26 @@ class ApiService {
         data = jsonDecode(data);
       } catch (e) {
         debugPrint('JSON Parse failed: $e');
-        throw Exception('Invalid JSON response');
+        throw ApiException('Invalid JSON response from server', statusCode: statusCode);
       }
     }
 
     if (data is! Map<String, dynamic>) {
       debugPrint('Invalid response format: $data');
-      throw Exception('API response must be a JSON object');
+      throw ApiException('Server returned invalid data format', statusCode: statusCode);
     }
 
     if (data['success'] == false) {
-      final message = data['message'] ?? 'Unknown error';
-      // Graceful handling for "not found" cases (common for optional resources)
-      if (message.contains('not found') || message.contains('Resource')) {
+      final message = data['message'] ?? 'Unknown error occurred';
+      if (message.toLowerCase().contains('not found') ||
+          message.toLowerCase().contains('resource')) {
         return {'success': true, 'data': null};
       }
-      throw Exception('API Error: $message');
+      throw ApiException(message, statusCode: statusCode);
+    }
+
+    if (data['data'] == null) {
+      debugPrint('⚠️ API Warning: Success response missing "data" key → $data');
     }
 
     return data;

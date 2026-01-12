@@ -1,15 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.dube.prepking">
+    package="online.prepking">
 
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
-        android:label="PrepKing"
+        android:label="PrepKing Online"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="true">  <!-- ← ADDED THIS LINE -->
 
         <!-- IMPORTANT: Keep launchMode as singleTop and theme as LaunchTheme -->
         <activity
@@ -31,7 +32,6 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-
         </activity>
 
         <meta-data
@@ -46,5 +46,4 @@
             <data android:mimeType="text/plain" />
         </intent>
     </queries>
-
 </manifest>
